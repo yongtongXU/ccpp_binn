@@ -1,0 +1,16 @@
+scenario:
+  name: open_water
+map:
+  width: 60
+  height: 40
+  resolution: 1
+  obstacles: []
+usvs:
+  - id: USV1
+    start: [2.5, 2.5]
+    max_speed: 2.0
+    coverage_width: 4
+    coverage_radius: 2
+    min_turn_radius: 1
+    max_heading_change: 90
+    endurance: 10000

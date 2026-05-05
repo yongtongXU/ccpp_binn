@@ -1,9 +1,12 @@
-name: ccpp_binn
+name: BINN
 channels:
   - defaults
 dependencies:
-  - python=3.11
+  - python=3.10
   - numpy
-  - pandas
-  - matplotlib
   - scipy
+  - matplotlib
+  - pandas
+  - pyyaml
+  - imageio
+  - pytest

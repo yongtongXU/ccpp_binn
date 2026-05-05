@@ -1,0 +1,27 @@
+scenario:
+  name: island_obstacles
+map:
+  width: 80
+  height: 60
+  resolution: 1
+  obstacles:
+    - type: circle
+      cx: 22
+      cy: 20
+      radius: 6
+    - type: circle
+      cx: 52
+      cy: 38
+      radius: 8
+    - type: rectangle
+      x: 36
+      y: 12
+      width: 8
+      height: 12
+usvs:
+  - id: USV1
+    start: [3.5, 3.5]
+    max_speed: 2.0
+    coverage_width: 4
+    coverage_radius: 2
+    endurance: 12000

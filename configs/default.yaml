@@ -1,0 +1,38 @@
+map:
+  width: 100
+  height: 100
+  resolution: 1
+
+planning:
+  scan_angles: [0, 30, 45, 60, 90, 120, 135, 150]
+  target_coverage_rate: 0.98
+  min_residual_size: 3
+  allow_astar_connection: true
+
+sweep:
+  coverage_width: 4
+  min_segment_length: 3
+
+cost:
+  w_path_length: 1.0
+  w_turns: 2.0
+  w_connection: 1.5
+  w_astar: 3.0
+  w_residual: 4.0
+  w_obstacle: 1.0
+
+gbnn:
+  enabled: true
+  iterations: 5
+  excitation_uncovered: 1.0
+  inhibition_covered: 0.2
+  inhibition_obstacle: 2.0
+  residual_boost: 1.5
+  neighbor_weight: 0.2
+
+cluster:
+  enabled: false
+  balance_weight: 1.0
+
+output:
+  root: outputs
