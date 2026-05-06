@@ -6,20 +6,21 @@ from typing import Iterable
 import pandas as pd
 
 
-def ensure_output_dirs(root: str | Path) -> dict[str, Path]:
-    root = Path(root)
-    dirs = {
-        "root": root,
-        "figures": root / "figures",
-        "data": root / "data",
-        "animations": root / "animations",
-    }
-    for path in dirs.values():
-        path.mkdir(parents=True, exist_ok=True)
-    return dirs
+def ensure_scenario_dirs(root: str | Path, scenario_name: str) -> dict[str, Path]:
+    base = Path(root) / scenario_name
+    figures = base / "figures"
+    data = base / "data"
+    figures.mkdir(parents=True, exist_ok=True)
+    data.mkdir(parents=True, exist_ok=True)
+    return {"base": base, "figures": figures, "data": data}
 
 
-def write_csv(path: str | Path, rows: Iterable[dict], columns: list[str]) -> None:
-    df = pd.DataFrame(list(rows), columns=columns)
+def write_rows_csv(path: str | Path, rows: Iterable[dict], columns: list[str] | None = None) -> None:
+    df = pd.DataFrame(list(rows))
+    if columns is not None:
+        for col in columns:
+            if col not in df.columns:
+                df[col] = None
+        df = df[columns]
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(path, index=False)

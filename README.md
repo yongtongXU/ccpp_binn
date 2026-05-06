@@ -1,51 +1,69 @@
-## 面向复杂水域异构无人艇集群的连通性保持型全覆盖路径规划方法
+# 单艇元胞级 GBNN 辅助全覆盖路径规划
 
-本项目实现二维栅格仿真下的连通性保持型全覆盖路径规划。主路径由候选扫描方向、平行扫描线、障碍切割覆盖段和牛耕式排序生成；GBNN 仅作为覆盖需求场可视化与残留补扫排序辅助，不参与主路径生成。
+本项目实现单艇、栅格元胞级的 GBNN 辅助全覆盖路径规划算法。一个元胞对应一个栅格、一个神经元和无人艇一次探测宽度；无人艇进入可通行元胞即认为完成覆盖。
 
-### 环境
+## 核心算法定位
+
+- 全覆盖路径规划是核心任务。
+- GBNN 只构造覆盖需求场，不直接按全图最大活性跳转。
+- 正常阶段由滚动优化算子展开有限深度候选路径树，并只执行最优分支第一步。
+- 死区阶段由回溯候选和 Dijkstra 扩张候选融合选择逃逸点。
+- A* / Dijkstra 只作为连接到逃逸点的图搜索工具。
+- 当前仅支持单艇、静态障碍、8 邻域运动。
+
+## 环境
 
 ```bash
 conda env create -f environment.yml
 conda activate BINN
 ```
 
-### 运行
+如果本机已有 `BINN` 环境，可直接运行。
+
+## 运行
+
+单场景：
 
 ```bash
 python main.py --scenario configs/scenarios/open_water.yaml
 python main.py --scenario configs/scenarios/single_obstacle.yaml
+python main.py --scenario configs/scenarios/island_obstacles.yaml
 python main.py --scenario configs/scenarios/concave_area.yaml
-python main.py --scenario configs/scenarios/heterogeneous_cluster.yaml
+```
+
+全部场景：
+
+```bash
+python main.py --all
 ```
 
 可选参数：
 
 ```bash
-python main.py --scenario configs/scenarios/island_obstacles.yaml --output outputs/island_run --animate
+python main.py --all --output outputs/test_run --max-steps 10000
 python main.py --scenario configs/scenarios/open_water.yaml --no-gbnn
-python main.py --scenario configs/scenarios/open_water.yaml --animate --animation-step 1
+python main.py --scenario configs/scenarios/open_water.yaml --no-rolling
+python main.py --scenario configs/scenarios/open_water.yaml --no-escape
 ```
 
-### 输出
+## 输出
 
-图片输出到 `outputs/figures`：
+每个场景输出到 `outputs/<scenario_name>/`：
 
-- `trajectory.png`
-- `segments.png`
-- `coverage_map.png`
-- `gbnn_activity.png`
-- `metrics_curve.png`
-- `../animations/coverage.gif`，使用 `--animate` 时生成，逐步展示路径执行、当前位置和覆盖区域更新。
+- `figures/trajectory.png`
+- `figures/activity_map.png`
+- `figures/coverage_map.png`
+- `data/path.csv`
+- `data/decisions.csv`
+- `data/escapes.csv`
+- `data/metrics.csv`
 
-数据输出到 `outputs/data`：
+全部场景汇总写入：
 
-- `paths.csv`
-- `segments.csv`
-- `final_metrics.csv`
+- `outputs/summary.csv`
 
-### 当前简化假设
+## 测试
 
-- 以二维栅格覆盖规划为主，不做 USV 动力学积分。
-- 段间连接优先直线可航，必要时使用 A*。
-- 异构集群采用段级启发式贪心分配，不使用 CVT、CBBA、Voronoi、强化学习或 LLM。
-- GBNN 只表达未覆盖需求与残留补扫优先级，不生成主路径。
+```bash
+pytest -q
+```

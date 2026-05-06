@@ -1,28 +1,29 @@
 scenario:
   name: concave_area
 map:
-  width: 80
+  width: 70
   height: 60
-  resolution: 1
-  boundary:
-    - [0, 0]
-    - [80, 0]
-    - [80, 60]
-    - [48, 60]
-    - [48, 36]
-    - [32, 36]
-    - [32, 60]
-    - [0, 60]
+  cell_size: 1.0
   obstacles:
+    - type: u_shape
+      rectangles:
+        - x: 22
+          y: 16
+          width: 7
+          height: 32
+        - x: 42
+          y: 16
+          width: 7
+          height: 32
+        - x: 22
+          y: 16
+          width: 27
+          height: 7
     - type: rectangle
-      x: 36
-      y: 24
-      width: 8
-      height: 8
-usvs:
-  - id: USV1
-    start: [3.5, 3.5]
-    max_speed: 2.0
-    coverage_width: 4
-    coverage_radius: 2
-    endurance: 12000
+      x: 8
+      y: 42
+      width: 12
+      height: 6
+start:
+  x: 0
+  y: 0

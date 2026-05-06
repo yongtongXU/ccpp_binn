@@ -1,1 +1,1 @@
-"""Connectivity-preserving coverage path planning package."""
+"""Single-USV cell-level GBNN assisted coverage path planning."""

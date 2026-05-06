@@ -3,17 +3,13 @@ scenario:
 map:
   width: 70
   height: 50
-  resolution: 1
+  cell_size: 1.0
   obstacles:
     - type: rectangle
-      x: 28
-      y: 16
-      width: 14
-      height: 16
-usvs:
-  - id: USV1
-    start: [3.5, 3.5]
-    max_speed: 2.0
-    coverage_width: 4
-    coverage_radius: 2
-    endurance: 10000
+      x: 27
+      y: 17
+      width: 16
+      height: 14
+start:
+  x: 0
+  y: 0
