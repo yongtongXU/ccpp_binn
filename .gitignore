@@ -1,5 +1,7 @@
 # Generated outputs
-outputs/
+outputs/*
+!outputs/
+!outputs/.gitkeep
 
 # macOS
 .DS_Store
