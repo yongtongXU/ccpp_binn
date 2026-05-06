@@ -1,0 +1,203 @@
+<svg width="1200" height="720" viewBox="0 0 1200 720" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .title { font-family: "Times New Roman", serif; font-size: 28px; font-weight: bold; }
+      .subtitle { font-family: "Times New Roman", serif; font-size: 20px; font-weight: bold; }
+      .label { font-family: "Times New Roman", serif; font-size: 17px; }
+      .small { font-family: "Times New Roman", serif; font-size: 14px; }
+      .grid { stroke: #7f8c8d; stroke-width: 1; }
+      .arrow { stroke: #333; stroke-width: 2.2; fill: none; marker-end: url(#arrowhead); }
+      .dash { stroke-dasharray: 7 5; }
+      .neuron { stroke: #334155; stroke-width: 1.4; }
+      .syn { stroke: #94a3b8; stroke-width: 1.1; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="720" fill="#ffffff"/>
+  <text x="600" y="42" text-anchor="middle" class="title">
+    Three-layer representation of GBNN-based complete coverage planning
+  </text>
+
+  <!-- Layer titles -->
+  <text x="200" y="95" text-anchor="middle" class="subtitle">Layer 1: Environment grid</text>
+  <text x="600" y="95" text-anchor="middle" class="subtitle">Layer 2: Single-layer neural network</text>
+  <text x="1000" y="95" text-anchor="middle" class="subtitle">Layer 3: USV motion path</text>
+
+  <!-- Environment grid -->
+  <g transform="translate(80,125)">
+    <rect x="0" y="0" width="240" height="240" fill="#f8fafc" stroke="#111827" stroke-width="2"/>
+
+    <!-- grid cells -->
+    <g>
+      <script type="application/ecmascript"><![CDATA[]]></script>
+      <!-- draw grid manually -->
+      <line x1="40" y1="0" x2="40" y2="240" class="grid"/>
+      <line x1="80" y1="0" x2="80" y2="240" class="grid"/>
+      <line x1="120" y1="0" x2="120" y2="240" class="grid"/>
+      <line x1="160" y1="0" x2="160" y2="240" class="grid"/>
+      <line x1="200" y1="0" x2="200" y2="240" class="grid"/>
+      <line x1="0" y1="40" x2="240" y2="40" class="grid"/>
+      <line x1="0" y1="80" x2="240" y2="80" class="grid"/>
+      <line x1="0" y1="120" x2="240" y2="120" class="grid"/>
+      <line x1="0" y1="160" x2="240" y2="160" class="grid"/>
+      <line x1="0" y1="200" x2="240" y2="200" class="grid"/>
+    </g>
+
+    <!-- covered cells -->
+    <rect x="0" y="200" width="40" height="40" fill="#93c5fd"/>
+    <rect x="40" y="200" width="40" height="40" fill="#93c5fd"/>
+    <rect x="80" y="200" width="40" height="40" fill="#93c5fd"/>
+    <rect x="120" y="200" width="40" height="40" fill="#93c5fd"/>
+    <rect x="160" y="200" width="40" height="40" fill="#93c5fd"/>
+    <rect x="200" y="200" width="40" height="40" fill="#93c5fd"/>
+    <rect x="200" y="160" width="40" height="40" fill="#93c5fd"/>
+    <rect x="160" y="160" width="40" height="40" fill="#93c5fd"/>
+    <rect x="120" y="160" width="40" height="40" fill="#93c5fd"/>
+
+    <!-- obstacles -->
+    <rect x="80" y="80" width="40" height="40" fill="#111827"/>
+    <rect x="120" y="80" width="40" height="40" fill="#111827"/>
+    <rect x="80" y="120" width="40" height="40" fill="#111827"/>
+    <rect x="160" y="40" width="40" height="40" fill="#111827"/>
+
+    <!-- uncovered cells overlay -->
+    <rect x="0" y="0" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="40" y="0" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="80" y="0" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="120" y="0" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="200" y="0" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="0" y="40" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="40" y="40" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="80" y="40" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="120" y="40" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="200" y="40" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="0" y="80" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="40" y="80" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="160" y="80" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="200" y="80" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="0" y="120" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="40" y="120" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="120" y="120" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="160" y="120" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="200" y="120" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="0" y="160" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="40" y="160" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+    <rect x="80" y="160" width="40" height="40" fill="#bbf7d0" opacity="0.85"/>
+
+    <!-- redraw grid on top -->
+    <rect x="0" y="0" width="240" height="240" fill="none" stroke="#111827" stroke-width="2"/>
+    <line x1="40" y1="0" x2="40" y2="240" class="grid"/>
+    <line x1="80" y1="0" x2="80" y2="240" class="grid"/>
+    <line x1="120" y1="0" x2="120" y2="240" class="grid"/>
+    <line x1="160" y1="0" x2="160" y2="240" class="grid"/>
+    <line x1="200" y1="0" x2="200" y2="240" class="grid"/>
+    <line x1="0" y1="40" x2="240" y2="40" class="grid"/>
+    <line x1="0" y1="80" x2="240" y2="80" class="grid"/>
+    <line x1="0" y1="120" x2="240" y2="120" class="grid"/>
+    <line x1="0" y1="160" x2="240" y2="160" class="grid"/>
+    <line x1="0" y1="200" x2="240" y2="200" class="grid"/>
+  </g>
+
+  <!-- Neural network layer -->
+  <g transform="translate(480,125)">
+    <!-- synapses -->
+    <g>
+      <!-- horizontal and vertical links -->
+      <line x1="20" y1="20" x2="60" y2="20" class="syn"/>
+      <line x1="60" y1="20" x2="100" y2="20" class="syn"/>
+      <line x1="100" y1="20" x2="140" y2="20" class="syn"/>
+      <line x1="140" y1="20" x2="180" y2="20" class="syn"/>
+      <line x1="180" y1="20" x2="220" y2="20" class="syn"/>
+      <line x1="20" y1="60" x2="60" y2="60" class="syn"/>
+      <line x1="60" y1="60" x2="100" y2="60" class="syn"/>
+      <line x1="100" y1="60" x2="140" y2="60" class="syn"/>
+      <line x1="140" y1="60" x2="180" y2="60" class="syn"/>
+      <line x1="180" y1="60" x2="220" y2="60" class="syn"/>
+      <line x1="20" y1="100" x2="60" y2="100" class="syn"/>
+      <line x1="60" y1="100" x2="100" y2="100" class="syn"/>
+      <line x1="100" y1="100" x2="140" y2="100" class="syn"/>
+      <line x1="140" y1="100" x2="180" y2="100" class="syn"/>
+      <line x1="180" y1="100" x2="220" y2="100" class="syn"/>
+      <line x1="20" y1="140" x2="60" y2="140" class="syn"/>
+      <line x1="60" y1="140" x2="100" y2="140" class="syn"/>
+      <line x1="100" y1="140" x2="140" y2="140" class="syn"/>
+      <line x1="140" y1="140" x2="180" y2="140" class="syn"/>
+      <line x1="180" y1="140" x2="220" y2="140" class="syn"/>
+      <line x1="20" y1="180" x2="60" y2="180" class="syn"/>
+      <line x1="60" y1="180" x2="100" y2="180" class="syn"/>
+      <line x1="100" y1="180" x2="140" y2="180" class="syn"/>
+      <line x1="140" y1="180" x2="180" y2="180" class="syn"/>
+      <line x1="180" y1="180" x2="220" y2="180" class="syn"/>
+      <line x1="20" y1="220" x2="60" y2="220" class="syn"/>
+      <line x1="60" y1="220" x2="100" y2="220" class="syn"/>
+      <line x1="100" y1="220" x2="140" y2="220" class="syn"/>
+      <line x1="140" y1="220" x2="180" y2="220" class="syn"/>
+      <line x1="180" y1="220" x2="220" y2="220" class="syn"/>
+
+      <line x1="20" y1="20" x2="20" y2="60" class="syn"/>
+      <line x1="20" y1="60" x2="20" y2="100" class="syn"/>
+      <line x1="20" y1="100" x2="20" y2="140" class="syn"/>
+      <line x1="20" y1="140" x2="20" y2="180" class="syn"/>
+      <line x1="20" y1="180" x2="20" y2="220" class="syn"/>
+      <line x1="60" y1="20" x2="60" y2="60" class="syn"/>
+      <line x1="60" y1="60" x2="60" y2="100" class="syn"/>
+      <line x1="60" y1="100" x2="60" y2="140" class="syn"/>
+      <line x1="60" y1="140" x2="60" y2="180" class="syn"/>
+      <line x1="60" y1="180" x2="60" y2="220" class="syn"/>
+      <line x1="100" y1="20" x2="100" y2="60" class="syn"/>
+      <line x1="100" y1="60" x2="100" y2="100" class="syn"/>
+      <line x1="100" y1="100" x2="100" y2="140" class="syn"/>
+      <line x1="100" y1="140" x2="100" y2="180" class="syn"/>
+      <line x1="100" y1="180" x2="100" y2="220" class="syn"/>
+      <line x1="140" y1="20" x2="140" y2="60" class="syn"/>
+      <line x1="140" y1="60" x2="140" y2="100" class="syn"/>
+      <line x1="140" y1="100" x2="140" y2="140" class="syn"/>
+      <line x1="140" y1="140" x2="140" y2="180" class="syn"/>
+      <line x1="140" y1="180" x2="140" y2="220" class="syn"/>
+      <line x1="180" y1="20" x2="180" y2="60" class="syn"/>
+      <line x1="180" y1="60" x2="180" y2="100" class="syn"/>
+      <line x1="180" y1="100" x2="180" y2="140" class="syn"/>
+      <line x1="180" y1="140" x2="180" y2="180" class="syn"/>
+      <line x1="180" y1="180" x2="180" y2="220" class="syn"/>
+      <line x1="220" y1="20" x2="220" y2="60" class="syn"/>
+      <line x1="220" y1="60" x2="220" y2="100" class="syn"/>
+      <line x1="220" y1="100" x2="220" y2="140" class="syn"/>
+      <line x1="220" y1="140" x2="220" y2="180" class="syn"/>
+      <line x1="220" y1="180" x2="220" y2="220" class="syn"/>
+    </g>
+
+    <!-- neurons -->
+    <g>
+      <!-- 6x6 neurons; color by state -->
+      <circle cx="20" cy="20" r="11" fill="#22c55e" class="neuron"/>
+      <circle cx="60" cy="20" r="11" fill="#22c55e" class="neuron"/>
+      <circle cx="100" cy="20" r="11" fill="#22c55e" class="neuron"/>
+      <circle cx="140" cy="20" r="11" fill="#22c55e" class="neuron"/>
+      <circle cx="180" cy="20" r="11" fill="#111827" class="neuron"/>
+      <circle cx="220" cy="20" r="11" fill="#22c55e" class="neuron"/>
+
+      <circle cx="20" cy="60" r="11" fill="#22c55e" class="neuron"/>
+      <circle cx="60" cy="60" r="11" fill="#22c55e" class="neuron"/>
+      <circle cx="100" cy="60" r="11" fill="#22c55e" class="neuron"/>
+      <circle cx="140" cy="60" r="11" fill="#22c55e" class="neuron"/>
+      <circle cx="180" cy="60" r="11" fill="#111827" class="neuron"/>
+      <circle cx="220" cy="60" r="11" fill="#22c55e" class="neuron"/>
+
+      <circle cx="20" cy="100" r="11" fill="#22c55e" class="neuron"/>
+      <circle cx="60" cy="100" r="11" fill="#22c55e" class="neuron"/>
+      <circle cx="100" cy="100" r="11" fill="#111827" class="neuron"/>
+      <circle cx="140" cy="100" r="11" fill="#111827" class="neuron"/>
+      <circle cx="180" cy="100" r="11" fill="#22c55e" class="neuron"/>
+      <circle cx="220" cy="100" r="11" fill="#22c55e" class="neuron"/>
+
+      <circle cx="20" cy="140" r="11" fill="#22c55e" class="neuron"/>
+      <circle cx="60" cy="140" r="11" fill="#22c55e" class="neuron"/>
+      <circle cx="100" cy="140" r="11" fill="#111827" class="neuron"/>
+      <circle cx="140" cy="140" r="11" fill="#22c55e" class="neuron"/>
+      <circle cx="180" cy="140" r="11" fill="#22c55e" class="neuron"/>
+      <circle cx="220" cy="140" r="11" fill="#22c55e" class="neuron"/>
+
+<svg>
