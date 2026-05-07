@@ -31,6 +31,14 @@ conda activate BINN
 
 ## 运行
 
+Web 控制台：
+
+```bash
+python web_server.py --port 8000
+```
+
+然后打开 `http://127.0.0.1:8000`，可在网页中选择场景、设置算法参数、运行规划并在线展示每一步候选路径和最终选择。场景切换后地图会立即加载；点击运行后后端会逐步推送 `decision` / `step` 事件，前端边规划边绘制。
+
 单场景：
 
 ```bash
@@ -64,6 +72,8 @@ python main.py --scenario configs/scenarios/open_water.yaml --no-escape
 - `figures/trajectory.png`
 - `figures/activity_map.png`
 - `figures/coverage_map.png`
+- `animations/planning_process.gif`
+- `animations/planning_viewer.html`
 - `data/path.csv`
 - `data/decisions.csv`
 - `data/escapes.csv`

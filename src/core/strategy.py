@@ -85,7 +85,7 @@ class RollingGBNNStrategy:
             self._escape_type = "none"
         else:
             escape_type = self._escape_type
-        return StepDecision(next_cell, [next_cell], {}, mode="escape", escape_type=escape_type)
+        return StepDecision(next_cell, [next_cell, *self._escape_path], {}, mode="escape", escape_type=escape_type)
 
     def _start_escape(self, step: int, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> StepDecision:
         reason = "rolling_none_strip_stagnation"
@@ -113,7 +113,7 @@ class RollingGBNNStrategy:
             "candidate_score": debug.get("candidate_score"),
             "reason": reason,
         }
-        return StepDecision(next_cell, [next_cell], debug, mode="escape", escape_type=escape_type, escape_record=record, deadlock=True)
+        return StepDecision(next_cell, [next_cell, *self._escape_path], debug, mode="escape", escape_type=escape_type, escape_record=record, deadlock=True)
 
     def _escape_allowed(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> bool:
         planner_cfg = self.config.get("planner", {})
@@ -160,6 +160,14 @@ class GBNNGreedyStrategy:
             return activity + heading_weight * heading + coverage
 
         next_cell = max(candidates, key=score)
+        candidate_branches = [
+            {
+                "type": "gbnn_greedy",
+                "score": float(score(cell)),
+                "path": [[int(cell[0]), int(cell[1])]],
+            }
+            for cell in sorted(candidates, key=score, reverse=True)
+        ]
         details = {
             "branch_score": float(score(next_cell)),
             "activity_score": float(gbnn_field.get_activity(next_cell)),
@@ -170,6 +178,7 @@ class GBNNGreedyStrategy:
             "repeat_penalty": float(1.0 if cell_map.visit_count[next_cell[1], next_cell[0]] > 0 else 0.0),
             "dead_zone_penalty": 0.0,
             "obstacle_penalty": 0.0,
+            "candidate_branches": candidate_branches,
         }
         return StepDecision(next_cell, [next_cell], details)
 

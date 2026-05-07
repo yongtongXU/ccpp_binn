@@ -134,7 +134,13 @@ class EscapeSelector:
             "reason": reason,
             "candidate_score": selected.score,
             "candidates": [
-                {"type": c.escape_type, "target": c.target, "score": c.score, "path_length": len(c.path) - 1}
+                {
+                    "type": c.escape_type,
+                    "target": c.target,
+                    "score": c.score,
+                    "path_length": len(c.path) - 1,
+                    "path": [[int(x), int(y)] for x, y in c.path[1:]],
+                }
                 for c in candidates
             ],
         }

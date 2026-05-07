@@ -1,0 +1,868 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CCPP 路径规划控制台</title>
+  <style>
+    :root {
+      font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #18212f;
+      background: #eef2f5;
+      --panel: #ffffff;
+      --line: #d6dde5;
+      --muted: #66758a;
+      --normal: #1f77b4;
+      --candidate: #7b61ff;
+      --selected: #d62728;
+      --backtrack: #2ca02c;
+      --dijkstra: #ff7f0e;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #eef2f5;
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 340px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+    aside {
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+      padding: 16px;
+      overflow: auto;
+    }
+    main {
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) auto;
+      gap: 12px;
+      padding: 14px;
+      min-width: 0;
+    }
+    h1 {
+      font-size: 20px;
+      margin: 0 0 14px;
+    }
+    fieldset {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      margin: 0 0 12px;
+      padding: 12px;
+    }
+    legend {
+      color: var(--muted);
+      font-size: 12px;
+      padding: 0 6px;
+    }
+    label {
+      display: grid;
+      gap: 5px;
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    input, select {
+      width: 100%;
+      height: 34px;
+      border: 1px solid #c9d2dc;
+      border-radius: 6px;
+      padding: 0 9px;
+      background: #fff;
+      color: #18212f;
+      font-size: 13px;
+    }
+    input[type="checkbox"] {
+      width: auto;
+      height: auto;
+      margin-right: 7px;
+    }
+    input[type="range"] {
+      padding: 0;
+    }
+    .inline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 0;
+      color: #2e3a49;
+      font-size: 13px;
+    }
+    button {
+      height: 36px;
+      border: 1px solid #bfc9d4;
+      border-radius: 6px;
+      background: #f8fafc;
+      color: #17202a;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    button:hover {
+      background: #edf2f7;
+    }
+    button.primary {
+      width: 100%;
+      background: #1769aa;
+      border-color: #1769aa;
+      color: #fff;
+      font-weight: 600;
+    }
+    button.primary:hover {
+      background: #125c97;
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+    .stage {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      min-height: 480px;
+      overflow: hidden;
+      position: relative;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .status {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      min-width: 0;
+    }
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
+    .metric strong {
+      display: block;
+      font-size: 14px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .playbar {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      display: grid;
+      grid-template-columns: auto auto auto minmax(120px, 1fr) 160px;
+      gap: 10px;
+      align-items: center;
+    }
+    .legend {
+      display: grid;
+      gap: 7px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .swatch {
+      display: inline-block;
+      width: 18px;
+      height: 3px;
+      margin-right: 7px;
+      vertical-align: middle;
+      background: var(--normal);
+    }
+    .candidate { background: var(--candidate); }
+    .selected { background: var(--selected); }
+    .backtrack { background: var(--backtrack); }
+    .dijkstra { background: var(--dijkstra); }
+    .links {
+      display: grid;
+      gap: 7px;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+    .links a {
+      color: #1769aa;
+      text-decoration: none;
+    }
+    .message {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 20px;
+    }
+    @media (max-width: 960px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+      aside {
+        border-right: none;
+        border-bottom: 1px solid var(--line);
+      }
+      .status {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .playbar {
+        grid-template-columns: repeat(3, auto);
+      }
+      .playbar label {
+        grid-column: 1 / -1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <h1>路径规划控制台</h1>
+      <fieldset>
+        <legend>场景与算法</legend>
+        <label>场景
+          <select id="scenarioSelect"></select>
+        </label>
+        <label>方法
+          <select id="methodSelect">
+            <option value="rolling_gbnn">rolling_gbnn</option>
+            <option value="gbnn_greedy">gbnn_greedy</option>
+          </select>
+        </label>
+        <label>最大步数
+          <input id="maxStepsInput" type="number" min="1" value="30000">
+        </label>
+        <label>目标覆盖率
+          <input id="targetInput" type="number" min="0.01" max="1" step="0.01" value="1">
+        </label>
+      </fieldset>
+      <fieldset>
+        <legend>模块开关</legend>
+        <div class="inline"><input id="noGbnnInput" type="checkbox">关闭 GBNN</div>
+        <div class="inline"><input id="noRollingInput" type="checkbox">关闭 Rolling</div>
+        <div class="inline"><input id="noEscapeInput" type="checkbox">关闭 Escape</div>
+      </fieldset>
+      <fieldset>
+        <legend>滚动候选树</legend>
+        <label>预测步数
+          <input id="horizonInput" type="number" min="1" max="12" value="3">
+        </label>
+        <label>Beam Width
+          <input id="beamWidthInput" type="number" min="1" value="30">
+        </label>
+        <label>展示候选数
+          <input id="candidateCountInput" type="number" min="1" value="30">
+        </label>
+        <label>分支最大重复
+          <input id="maxRepeatInput" type="number" min="1" value="3">
+        </label>
+        <div class="inline"><input id="allowBacktrackInput" type="checkbox">允许立即回退</div>
+      </fieldset>
+      <fieldset>
+        <legend>评价权重</legend>
+        <label>新覆盖
+          <input id="wNewCoverageInput" type="number" step="0.1" value="8">
+        </label>
+        <label>活性
+          <input id="wActivityInput" type="number" step="0.1" value="1">
+        </label>
+        <label>方向连续
+          <input id="wDirectionInput" type="number" step="0.1" value="4">
+        </label>
+        <label>结构
+          <input id="wStructureInput" type="number" step="0.1" value="3">
+        </label>
+        <label>转向惩罚
+          <input id="wTurnInput" type="number" step="0.1" value="3">
+        </label>
+        <label>重复惩罚
+          <input id="wRepeatInput" type="number" step="0.1" value="2">
+        </label>
+        <label>死区惩罚
+          <input id="wDeadZoneInput" type="number" step="0.1" value="5">
+        </label>
+        <label>障碍惩罚
+          <input id="wObstacleInput" type="number" step="0.1" value="1.5">
+        </label>
+      </fieldset>
+      <fieldset>
+        <legend>GBNN / Escape</legend>
+        <label>GBNN 迭代次数
+          <input id="gbnnIterationsInput" type="number" min="1" value="1">
+        </label>
+        <label>邻域权重
+          <input id="neighborWeightInput" type="number" step="0.01" value="0.2">
+        </label>
+        <label>传递 beta
+          <input id="transferBetaInput" type="number" step="0.01" value="0.6">
+        </label>
+        <label>回溯最大步数
+          <input id="backtrackingMaxInput" type="number" min="1" value="500">
+        </label>
+        <label>Dijkstra 最大扩展
+          <input id="dijkstraMaxInput" type="number" min="1" value="5000">
+        </label>
+      </fieldset>
+      <fieldset>
+        <legend>输出与播放</legend>
+        <div class="inline"><input id="saveAnimationInput" type="checkbox">同时保存 GIF/HTML 动图文件</div>
+        <label>GIF FPS
+          <input id="fpsInput" type="number" min="1" max="60" value="12">
+        </label>
+        <label>GIF 最大帧数
+          <input id="maxFramesInput" type="number" min="2" value="300">
+        </label>
+        <label>在线展示速度 <strong id="speedValue">1.00x</strong>
+          <input id="speedInput" type="range" min="0.1" max="5" step="0.1" value="1">
+        </label>
+      </fieldset>
+      <button id="runBtn" class="primary">运行规划</button>
+      <div id="message" class="message">加载场景中...</div>
+      <div class="links" id="outputLinks"></div>
+      <div class="legend">
+        <div><span class="swatch"></span>已执行普通路径</div>
+        <div><span class="swatch backtrack"></span>回溯逃逸</div>
+        <div><span class="swatch dijkstra"></span>Dijkstra 逃逸</div>
+        <div><span class="swatch candidate"></span>当前候选路径</div>
+        <div><span class="swatch selected"></span>当前选中路径</div>
+      </div>
+    </aside>
+    <main>
+      <section class="stage">
+        <canvas id="canvas"></canvas>
+      </section>
+      <section class="status">
+        <div class="metric"><span>Step</span><strong id="stepText">-</strong></div>
+        <div class="metric"><span>Coverage</span><strong id="coverageText">-</strong></div>
+        <div class="metric"><span>Mode</span><strong id="modeText">-</strong></div>
+        <div class="metric"><span>Selected</span><strong id="selectedText">-</strong></div>
+        <div class="metric"><span>Score</span><strong id="scoreText">-</strong></div>
+        <div class="metric"><span>Candidates</span><strong id="candidateText">-</strong></div>
+      </section>
+      <section class="playbar">
+        <button id="prevBtn">上一步</button>
+        <button id="playBtn">暂停</button>
+        <button id="nextBtn">下一步</button>
+        <label>进度
+          <input id="stepSlider" type="range" min="0" max="0" value="0">
+        </label>
+        <label>速度
+          <input id="playSpeedInput" type="range" min="0.1" max="5" step="0.1" value="1">
+        </label>
+      </section>
+    </main>
+  </div>
+  <script>
+    const state = {
+      data: null,
+      index: 0,
+      playing: false,
+      speed: 1,
+      lastTime: 0,
+      streaming: false,
+      runId: null,
+    };
+
+    const el = {
+      scenario: document.getElementById("scenarioSelect"),
+      method: document.getElementById("methodSelect"),
+      maxSteps: document.getElementById("maxStepsInput"),
+      target: document.getElementById("targetInput"),
+      noGbnn: document.getElementById("noGbnnInput"),
+      noRolling: document.getElementById("noRollingInput"),
+      noEscape: document.getElementById("noEscapeInput"),
+      horizon: document.getElementById("horizonInput"),
+      beamWidth: document.getElementById("beamWidthInput"),
+      candidateCount: document.getElementById("candidateCountInput"),
+      maxRepeat: document.getElementById("maxRepeatInput"),
+      allowBacktrack: document.getElementById("allowBacktrackInput"),
+      wNewCoverage: document.getElementById("wNewCoverageInput"),
+      wActivity: document.getElementById("wActivityInput"),
+      wDirection: document.getElementById("wDirectionInput"),
+      wStructure: document.getElementById("wStructureInput"),
+      wTurn: document.getElementById("wTurnInput"),
+      wRepeat: document.getElementById("wRepeatInput"),
+      wDeadZone: document.getElementById("wDeadZoneInput"),
+      wObstacle: document.getElementById("wObstacleInput"),
+      gbnnIterations: document.getElementById("gbnnIterationsInput"),
+      neighborWeight: document.getElementById("neighborWeightInput"),
+      transferBeta: document.getElementById("transferBetaInput"),
+      backtrackingMax: document.getElementById("backtrackingMaxInput"),
+      dijkstraMax: document.getElementById("dijkstraMaxInput"),
+      saveAnimation: document.getElementById("saveAnimationInput"),
+      fps: document.getElementById("fpsInput"),
+      maxFrames: document.getElementById("maxFramesInput"),
+      run: document.getElementById("runBtn"),
+      message: document.getElementById("message"),
+      outputLinks: document.getElementById("outputLinks"),
+      canvas: document.getElementById("canvas"),
+      step: document.getElementById("stepText"),
+      coverage: document.getElementById("coverageText"),
+      mode: document.getElementById("modeText"),
+      selected: document.getElementById("selectedText"),
+      score: document.getElementById("scoreText"),
+      candidate: document.getElementById("candidateText"),
+      prev: document.getElementById("prevBtn"),
+      play: document.getElementById("playBtn"),
+      next: document.getElementById("nextBtn"),
+      stepSlider: document.getElementById("stepSlider"),
+      speed: document.getElementById("speedInput"),
+      playSpeed: document.getElementById("playSpeedInput"),
+      speedValue: document.getElementById("speedValue"),
+    };
+    const ctx = el.canvas.getContext("2d");
+
+    async function loadScenarios() {
+      const res = await fetch("/api/scenarios");
+      const data = await res.json();
+      el.scenario.innerHTML = "";
+      data.scenarios.forEach((scenario) => {
+        const option = document.createElement("option");
+        option.value = scenario.path;
+        option.textContent = scenario.name;
+        el.scenario.appendChild(option);
+      });
+      el.message.textContent = "选择参数后点击运行规划。";
+      if (el.scenario.value) await loadScenarioMap();
+    }
+
+    async function runPlanner() {
+      el.run.disabled = true;
+      el.message.textContent = "规划运行中，正在实时接收步骤...";
+      el.outputLinks.innerHTML = "";
+      try {
+        const payload = {
+          run_id: makeRunId(),
+          scenario: el.scenario.value,
+          method: el.method.value,
+          max_steps: Number(el.maxSteps.value),
+          target_coverage_rate: Number(el.target.value),
+          no_gbnn: el.noGbnn.checked,
+          no_rolling: el.noRolling.checked,
+          no_escape: el.noEscape.checked,
+          horizon: Number(el.horizon.value),
+          beam_width: Number(el.beamWidth.value),
+          record_candidate_count: Number(el.candidateCount.value),
+          max_repeat_in_branch: Number(el.maxRepeat.value),
+          allow_immediate_backtrack: el.allowBacktrack.checked,
+          w_new_coverage: Number(el.wNewCoverage.value),
+          w_activity: Number(el.wActivity.value),
+          w_direction: Number(el.wDirection.value),
+          w_structure: Number(el.wStructure.value),
+          w_turn: Number(el.wTurn.value),
+          w_repeat: Number(el.wRepeat.value),
+          w_dead_zone: Number(el.wDeadZone.value),
+          w_obstacle: Number(el.wObstacle.value),
+          iterations_per_step: Number(el.gbnnIterations.value),
+          neighbor_weight: Number(el.neighborWeight.value),
+          transfer_beta: Number(el.transferBeta.value),
+          backtracking_max_steps: Number(el.backtrackingMax.value),
+          dijkstra_max_expansion: Number(el.dijkstraMax.value),
+          save_animation: el.saveAnimation.checked,
+          save_outputs: true,
+          fps: Number(el.fps.value),
+          max_frames: Number(el.maxFrames.value),
+          playback_speed: Number(el.speed.value),
+          stream_delay_ms: Math.round(120 / Math.max(0.1, Number(el.speed.value))),
+        };
+        state.runId = payload.run_id;
+        state.streaming = true;
+        state.playing = true;
+        el.play.textContent = "暂停";
+        const res = await fetch("/api/run-stream", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "运行失败");
+        }
+        await consumeRunStream(res);
+      } catch (err) {
+        el.message.textContent = err.message;
+      } finally {
+        state.streaming = false;
+        state.runId = null;
+        el.run.disabled = false;
+      }
+    }
+
+    function makeRunId() {
+      if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+      return `run-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+
+    async function controlRun(action) {
+      if (!state.runId) return;
+      const res = await fetch("/api/control", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({run_id: state.runId, action}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `控制失败：${action}`);
+    }
+
+    async function loadScenarioMap() {
+      const res = await fetch(`/api/scenario?path=${encodeURIComponent(el.scenario.value)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "地图加载失败");
+      applyConfigToForm(data.config || {});
+      const start = data.map.start || [0, 0];
+      state.data = prepareData({
+        scenario: data.scenario,
+        map: data.map,
+        pathRows: [{
+          step: 0,
+          x: start[0],
+          y: start[1],
+          mode: "normal",
+          escape_type: "none",
+          coverage_rate: 0,
+          repeated_coverage_rate: 0,
+        }],
+        decisionRows: [],
+      });
+      state.index = 0;
+      state.streaming = false;
+      state.playing = false;
+      el.stepSlider.max = 0;
+      el.play.textContent = "播放";
+      el.message.textContent = `已加载地图：${data.scenario}。`;
+      draw();
+    }
+
+    function applyConfigToForm(config) {
+      const planner = config.planner || {};
+      const rolling = config.rolling_optimizer || {};
+      const gbnn = config.gbnn || {};
+      const escape = config.escape || {};
+      const method = config.method || {};
+      const animation = (config.output || {}).animation || {};
+      setInput(el.maxSteps, planner.max_steps);
+      setInput(el.target, planner.target_coverage_rate);
+      setInput(el.method, method.name);
+      setInput(el.horizon, rolling.horizon);
+      setInput(el.beamWidth, rolling.beam_width);
+      setInput(el.candidateCount, rolling.record_candidate_count || rolling.beam_width);
+      setInput(el.maxRepeat, rolling.max_repeat_in_branch);
+      el.allowBacktrack.checked = Boolean(rolling.allow_immediate_backtrack);
+      setInput(el.wNewCoverage, rolling.w_new_coverage);
+      setInput(el.wActivity, rolling.w_activity);
+      setInput(el.wDirection, rolling.w_direction);
+      setInput(el.wStructure, rolling.w_structure);
+      setInput(el.wTurn, rolling.w_turn);
+      setInput(el.wRepeat, rolling.w_repeat);
+      setInput(el.wDeadZone, rolling.w_dead_zone);
+      setInput(el.wObstacle, rolling.w_obstacle);
+      setInput(el.gbnnIterations, gbnn.iterations_per_step);
+      setInput(el.neighborWeight, gbnn.neighbor_weight);
+      setInput(el.transferBeta, gbnn.transfer_beta);
+      setInput(el.backtrackingMax, escape.backtracking_max_steps);
+      setInput(el.dijkstraMax, escape.dijkstra_max_expansion);
+      setInput(el.fps, animation.fps);
+      setInput(el.maxFrames, animation.max_frames);
+      setSpeed(animation.playback_speed || el.speed.value);
+    }
+
+    function setInput(input, value) {
+      if (value !== undefined && value !== null) input.value = String(value);
+    }
+
+    async function consumeRunStream(res) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const {value, done} = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, {stream: true});
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          handleRunEvent(JSON.parse(line));
+        }
+      }
+      if (buffer.trim()) handleRunEvent(JSON.parse(buffer));
+    }
+
+    function handleRunEvent(event) {
+      if (event.type === "error") throw new Error(event.error || "流式运行失败");
+      if (event.type === "init") {
+        state.data = prepareData({
+          scenario: event.scenario,
+          map: event.map,
+          pathRows: [event.pathRow],
+          decisionRows: [],
+          outputs: event.outputs,
+        });
+        state.index = 0;
+        state.speed = Number(el.speed.value);
+        el.playSpeed.value = String(state.speed);
+        el.stepSlider.max = 0;
+        el.message.textContent = `开始规划：${event.scenario}`;
+        draw();
+        return;
+      }
+      if (event.type === "step") {
+        state.data.pathRows.push(event.pathRow);
+        if (!state.data.decisions.has(Number(event.decisionRow.step))) {
+          state.data.decisionRows.push(event.decisionRow);
+          state.data.decisions.set(Number(event.decisionRow.step), event.decisionRow);
+        }
+        el.stepSlider.max = Math.max(0, state.data.pathRows.length - 1);
+        if (state.playing) state.index = state.data.pathRows.length - 1;
+        el.message.textContent = `规划中：step ${event.pathRow.step}，覆盖率 ${(Number(event.pathRow.coverage_rate) * 100).toFixed(2)}%。`;
+        draw();
+        return;
+      }
+      if (event.type === "decision") {
+        state.data.decisionRows.push(event.decisionRow);
+        state.data.decisions.set(Number(event.decisionRow.step), event.decisionRow);
+        state.index = state.data.pathRows.length - 1;
+        el.message.textContent = `决策中：step ${event.decisionRow.step}，候选路径 ${(event.decisionRow.candidate_branches || []).length} 条。`;
+        draw();
+        return;
+      }
+      if (event.type === "stopped") {
+        el.message.textContent = `规划停止：${event.reason}`;
+        return;
+      }
+      if (event.type === "done") {
+        state.streaming = false;
+        state.playing = false;
+        el.play.textContent = "播放";
+        el.message.textContent = `完成，覆盖率 ${(Number(event.metrics.coverage_rate) * 100).toFixed(2)}%。`;
+        renderLinks(event.outputs);
+        draw();
+      }
+    }
+
+    function prepareData(data) {
+      const decisions = new Map();
+      (data.decisionRows || []).forEach((row) => decisions.set(Number(row.step), row));
+      return {...data, decisions, obstacles: new Set(data.map.obstacles.map((cell) => `${cell[0]},${cell[1]}`))};
+    }
+
+    function renderLinks(outputs) {
+      const links = [
+        ["轨迹图", outputs.trajectory],
+        ["覆盖图", outputs.coverage],
+        ["活性图", outputs.activity],
+      ];
+      if (el.saveAnimation.checked) {
+        links.push(["GIF", outputs.gif], ["独立播放器", outputs.viewer]);
+      }
+      el.outputLinks.innerHTML = links.map(([label, url]) => `<a href="${url}" target="_blank">${label}</a>`).join("");
+    }
+
+    function resizeCanvas() {
+      const box = el.canvas.parentElement.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      el.canvas.width = Math.max(360, Math.floor(box.width * ratio));
+      el.canvas.height = Math.max(360, Math.floor(box.height * ratio));
+      draw();
+    }
+
+    function getMetrics() {
+      const data = state.data;
+      const padding = 26 * (window.devicePixelRatio || 1);
+      const cell = Math.min((el.canvas.width - padding * 2) / data.map.width, (el.canvas.height - padding * 2) / data.map.height);
+      return {
+        cell,
+        left: (el.canvas.width - cell * data.map.width) / 2,
+        top: (el.canvas.height - cell * data.map.height) / 2,
+      };
+    }
+
+    function toCanvas(cell, metrics) {
+      const data = state.data;
+      return [
+        metrics.left + (cell[0] + 0.5) * metrics.cell,
+        metrics.top + (data.map.height - cell[1] - 0.5) * metrics.cell,
+      ];
+    }
+
+    function drawGrid(metrics, covered) {
+      const data = state.data;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, el.canvas.width, el.canvas.height);
+      for (let y = 0; y < data.map.height; y++) {
+        for (let x = 0; x < data.map.width; x++) {
+          const key = `${x},${y}`;
+          const px = metrics.left + x * metrics.cell;
+          const py = metrics.top + (data.map.height - y - 1) * metrics.cell;
+          ctx.fillStyle = data.obstacles.has(key) ? "#222222" : covered.has(key) ? "#83c77b" : "#f8fafc";
+          ctx.fillRect(px, py, metrics.cell, metrics.cell);
+          ctx.strokeStyle = "#c9d1d9";
+          ctx.lineWidth = Math.max(0.5, metrics.cell * 0.025);
+          ctx.strokeRect(px, py, metrics.cell, metrics.cell);
+        }
+      }
+    }
+
+    function coveredCells() {
+      const covered = new Set();
+      for (let i = 0; i <= state.index; i++) {
+        const row = state.data.pathRows[i];
+        covered.add(`${row.x},${row.y}`);
+      }
+      return covered;
+    }
+
+    function strokePath(cells, metrics, color, width, dash = []) {
+      if (!cells || cells.length === 0) return;
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.setLineDash(dash);
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      cells.forEach((cell, idx) => {
+        const [x, y] = toCanvas(cell, metrics);
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawPathNodes(cells, metrics, color, radiusScale) {
+      if (!cells || cells.length === 0) return;
+      ctx.save();
+      ctx.fillStyle = color;
+      cells.forEach((cell) => {
+        const [x, y] = toCanvas(cell, metrics);
+        ctx.beginPath();
+        ctx.arc(x, y, Math.max(2.5, metrics.cell * radiusScale), 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
+    }
+
+    function drawExecuted(metrics) {
+      const rows = state.data.pathRows;
+      for (let i = 1; i <= state.index; i++) {
+        const prev = rows[i - 1];
+        const row = rows[i];
+        const segment = [[prev.x, prev.y], [row.x, row.y]];
+        if (row.mode === "escape" && row.escape_type === "backtracking") {
+          strokePath(segment, metrics, "#2ca02c", Math.max(2, metrics.cell * 0.1), [8, 5]);
+        } else if (row.mode === "escape" && row.escape_type === "dijkstra") {
+          strokePath(segment, metrics, "#ff7f0e", Math.max(2, metrics.cell * 0.1), [8, 5]);
+        } else {
+          strokePath(segment, metrics, "#1f77b4", Math.max(2, metrics.cell * 0.1));
+        }
+      }
+    }
+
+    function drawDecision(metrics, decision) {
+      if (!decision) return;
+      const origin = decision.current || [decision.current_x, decision.current_y];
+      const candidates = decision.candidate_branches || [];
+      candidates.slice().reverse().forEach((candidate, rank) => {
+        const alpha = Math.max(0.1, 0.42 - rank * 0.012);
+        const cells = [origin, ...(candidate.path || [])];
+        ctx.globalAlpha = alpha;
+        strokePath(cells, metrics, "#7b61ff", Math.max(1.6, metrics.cell * 0.055));
+        drawPathNodes(cells.slice(1), metrics, "#7b61ff", 0.075);
+        ctx.globalAlpha = 1;
+      });
+      const selectedCells = [origin, ...(decision.selected_branch || [])];
+      strokePath(selectedCells, metrics, "#d62728", Math.max(2.5, metrics.cell * 0.13));
+      drawPathNodes(selectedCells.slice(1), metrics, "#d62728", 0.1);
+    }
+
+    function drawMarker(cell, metrics, color, scale) {
+      const [x, y] = toCanvas(cell, metrics);
+      ctx.beginPath();
+      ctx.fillStyle = color;
+      ctx.arc(x, y, Math.max(4, metrics.cell * scale), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function draw() {
+      if (!state.data || state.data.pathRows.length === 0) {
+        ctx.clearRect(0, 0, el.canvas.width, el.canvas.height);
+        return;
+      }
+      const rows = state.data.pathRows;
+      const row = rows[state.index];
+      const decision = state.data.decisions.get(Number(row.step) + 1) || state.data.decisions.get(Number(row.step));
+      const metrics = getMetrics();
+      drawGrid(metrics, coveredCells());
+      drawExecuted(metrics);
+      drawDecision(metrics, decision);
+      drawMarker([rows[0].x, rows[0].y], metrics, "#00aa00", 0.18);
+      drawMarker([row.x, row.y], metrics, "#d62728", 0.22);
+      el.step.textContent = String(row.step);
+      el.coverage.textContent = `${(Number(row.coverage_rate) * 100).toFixed(1)}%`;
+      el.mode.textContent = row.escape_type && row.escape_type !== "none" ? `${row.mode} / ${row.escape_type}` : row.mode;
+      el.selected.textContent = decision ? `${decision.selected_x}, ${decision.selected_y}` : "-";
+      el.score.textContent = decision && decision.branch_score !== null && decision.branch_score !== undefined ? Number(decision.branch_score).toFixed(2) : "-";
+      el.candidate.textContent = decision ? String((decision.candidate_branches || []).length) : "0";
+      el.stepSlider.value = String(state.index);
+    }
+
+    function setIndex(next) {
+      if (!state.data) return;
+      state.index = Math.max(0, Math.min(state.data.pathRows.length - 1, next));
+      draw();
+    }
+
+    function tick(time) {
+      const delay = 500 / Math.max(0.1, state.speed);
+      if (!state.streaming && state.playing && state.data && time - state.lastTime >= delay) {
+        setIndex(state.index >= state.data.pathRows.length - 1 ? 0 : state.index + 1);
+        state.lastTime = time;
+      }
+      requestAnimationFrame(tick);
+    }
+
+    el.run.addEventListener("click", runPlanner);
+    el.scenario.addEventListener("change", () => loadScenarioMap().catch((err) => { el.message.textContent = err.message; }));
+    el.prev.addEventListener("click", () => setIndex(state.index - 1));
+    el.next.addEventListener("click", () => setIndex(state.index + 1));
+    el.play.addEventListener("click", async () => {
+      try {
+        if (state.streaming) {
+          const nextPlaying = !state.playing;
+          await controlRun(nextPlaying ? "resume" : "pause");
+          state.playing = nextPlaying;
+          el.play.textContent = state.playing ? "暂停" : "播放";
+          el.message.textContent = state.playing ? "规划已继续。" : "规划已暂停。";
+          return;
+        }
+        state.playing = !state.playing;
+        el.play.textContent = state.playing ? "暂停" : "播放";
+      } catch (err) {
+        el.message.textContent = err.message;
+      }
+    });
+    el.stepSlider.addEventListener("input", (event) => setIndex(Number(event.target.value)));
+    function setSpeed(value) {
+      state.speed = Number(value);
+      el.speed.value = String(state.speed);
+      el.playSpeed.value = String(state.speed);
+      el.speedValue.textContent = `${state.speed.toFixed(2)}x`;
+    }
+    el.speed.addEventListener("input", (event) => setSpeed(event.target.value));
+    el.playSpeed.addEventListener("input", (event) => setSpeed(event.target.value));
+    window.addEventListener("resize", resizeCanvas);
+
+    loadScenarios().catch((err) => { el.message.textContent = err.message; });
+    resizeCanvas();
+    requestAnimationFrame(tick);
+  </script>
+</body>
+</html>

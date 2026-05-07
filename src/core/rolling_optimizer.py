@@ -21,30 +21,45 @@ class RollingOptimizer:
 
     def select_next_cell(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> tuple[Cell | None, list[Cell], dict]:
         self._feature_cache = {}
+        candidate_limit = int(self.config.get("record_candidate_count", self.config.get("beam_width", 30)))
         if self.config.get("enabled", True) is False:
             for n in cell_map.neighbors8(usv.current_cell):
                 if cell_map.is_uncovered(n):
-                    return n, [n], self.score_branch(usv, cell_map, gbnn_field, [n])
+                    branch = [n]
+                    details = self.score_branch(usv, cell_map, gbnn_field, branch)
+                    details["candidate_branches"] = _serialize_candidates(self._local_candidate_states(usv, cell_map, gbnn_field), candidate_limit)
+                    return n, branch, details
             return None, [], {"reason": "rolling_disabled_no_uncovered_neighbor"}
-        strip_step = self._direct_strip_step(usv, cell_map)
-        if strip_step is not None:
-            branch = [strip_step]
-            return strip_step, branch, self.score_branch(usv, cell_map, gbnn_field, branch)
         candidates = self.build_candidate_tree(usv, cell_map, gbnn_field)
         if not candidates:
+            strip_step = self._direct_strip_step(usv, cell_map)
+            if strip_step is not None:
+                branch = [strip_step]
+                details = self.score_branch(usv, cell_map, gbnn_field, branch)
+                details["candidate_branches"] = _serialize_candidates(self._local_candidate_states(usv, cell_map, gbnn_field), candidate_limit)
+                return strip_step, branch, details
             if self.current_strip_has_forward_uncovered(usv, cell_map):
                 fallback = self._local_strip_fallback(usv, cell_map, gbnn_field)
                 if fallback:
-                    return fallback[0], fallback, self.score_branch(usv, cell_map, gbnn_field, fallback)
+                    details = self.score_branch(usv, cell_map, gbnn_field, fallback)
+                    details["candidate_branches"] = _serialize_candidates(
+                        [BranchState(fallback, float(details["branch_score"]), details)], candidate_limit
+                    )
+                    return fallback[0], fallback, details
             return None, [], {"reason": "no_candidate_branch"}
         best = max(candidates, key=lambda b: b.score)
+        best.details["candidate_branches"] = _serialize_candidates(candidates, candidate_limit)
         if best.details.get("new_coverage_score", 0.0) <= 0.0 and not self.current_strip_has_forward_uncovered(usv, cell_map):
             return None, [], {"reason": "no_strip_new_coverage_candidate"}
         if best.score <= -1e8:
             if self.current_strip_has_forward_uncovered(usv, cell_map):
                 fallback = self._local_strip_fallback(usv, cell_map, gbnn_field)
                 if fallback:
-                    return fallback[0], fallback, self.score_branch(usv, cell_map, gbnn_field, fallback)
+                    details = self.score_branch(usv, cell_map, gbnn_field, fallback)
+                    details["candidate_branches"] = _serialize_candidates(
+                        [BranchState(fallback, float(details["branch_score"]), details)], candidate_limit
+                    )
+                    return fallback[0], fallback, details
             return None, [], {"reason": "invalid_candidate_score"}
         return best.branch[0], best.branch, best.details
 
@@ -65,6 +80,14 @@ class RollingOptimizer:
         if cell_map.is_traversable(front):
             return front
         return None
+
+    def _local_candidate_states(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> list[BranchState]:
+        candidates: list[BranchState] = []
+        for n in cell_map.neighbors8(usv.current_cell):
+            branch = [n]
+            details = self.score_branch(usv, cell_map, gbnn_field, branch)
+            candidates.append(BranchState(branch, float(details["branch_score"]), details))
+        return candidates
 
     def build_candidate_tree(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> list[BranchState]:
         horizon = int(self.config.get("horizon", 5))
@@ -92,15 +115,6 @@ class RollingOptimizer:
         max_repeat = int(self.config.get("max_repeat_in_branch", 3))
         if branch.count(cell) >= max_repeat:
             return False
-        current_strip = usv.current_strip_id if usv.current_strip_id is not None else usv.current_cell[1]
-        if self.current_strip_has_forward_uncovered(usv, cell_map):
-            prev = branch[-1] if branch else usv.current_cell
-            front = (prev[0] + (1 if usv.strip_direction >= 0 else -1), current_strip)
-            front_is_open = prev[1] == current_strip and cell_map.is_traversable(front)
-            if cell[1] != current_strip:
-                return False
-            if prev[1] != current_strip and cell[1] != current_strip:
-                return False
         if not self.config.get("allow_immediate_backtrack", False):
             if not branch and len(usv.path) >= 2 and cell == usv.path[-2]:
                 return False
@@ -355,3 +369,15 @@ def _heading_between(a: Cell, b: Cell) -> int | None:
 def _heading_delta(a: int, b: int) -> int:
     diff = abs(a - b) % 8
     return min(diff, 8 - diff)
+
+
+def _serialize_candidates(candidates: list[BranchState], limit: int) -> list[dict]:
+    ordered = sorted(candidates, key=lambda b: b.score, reverse=True)[: max(1, limit)]
+    return [
+        {
+            "type": "rolling",
+            "score": float(candidate.score),
+            "path": [[int(x), int(y)] for x, y in candidate.branch],
+        }
+        for candidate in ordered
+    ]

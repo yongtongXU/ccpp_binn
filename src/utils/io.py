@@ -9,10 +9,12 @@ import pandas as pd
 def ensure_scenario_dirs(root: str | Path, scenario_name: str) -> dict[str, Path]:
     base = Path(root) / scenario_name
     figures = base / "figures"
+    animations = base / "animations"
     data = base / "data"
     figures.mkdir(parents=True, exist_ok=True)
+    animations.mkdir(parents=True, exist_ok=True)
     data.mkdir(parents=True, exist_ok=True)
-    return {"base": base, "figures": figures, "data": data}
+    return {"base": base, "figures": figures, "animations": animations, "data": data}
 
 
 def write_rows_csv(path: str | Path, rows: Iterable[dict], columns: list[str] | None = None) -> None:

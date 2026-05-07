@@ -13,6 +13,7 @@ def test_open_water_20x20_smoke(tmp_path: Path):
     cfg["start"] = {"x": 1, "y": 1}
     cfg["planner"]["target_coverage_rate"] = 0.98
     cfg["planner"]["max_steps"] = 5000
+    cfg.setdefault("output", {}).setdefault("animation", {})["enabled"] = False
     metrics = CoveragePlanner(cfg).run(tmp_path)
     assert metrics["success"] is True
     assert metrics["coverage_rate"] >= 0.98

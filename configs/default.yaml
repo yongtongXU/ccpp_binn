@@ -33,7 +33,7 @@ gbnn:
 
 rolling_optimizer:
   enabled: true
-  horizon: 5
+  horizon: 3
   beam_width: 30
   max_repeat_in_branch: 3
   allow_immediate_backtrack: false
@@ -61,3 +61,8 @@ escape:
 
 output:
   root: outputs
+  animation:
+    enabled: true
+    fps: 12
+    max_frames: 300
+    playback_speed: 1.0
