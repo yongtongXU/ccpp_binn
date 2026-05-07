@@ -395,6 +395,9 @@
         <label>岔口补支
           <input id="wBranchUrgencyInput" type="number" step="0.1" value="12">
         </label>
+        <label>错过入口
+          <input id="wMissedBranchInput" type="number" step="0.1" value="45">
+        </label>
         <label>转向惩罚
           <input id="wTurnInput" type="number" step="0.1" value="3">
         </label>
@@ -460,6 +463,7 @@
       wDirection: document.getElementById("wDirectionInput"),
       wStructure: document.getElementById("wStructureInput"),
       wBranchUrgency: document.getElementById("wBranchUrgencyInput"),
+      wMissedBranch: document.getElementById("wMissedBranchInput"),
       wTurn: document.getElementById("wTurnInput"),
       wRepeat: document.getElementById("wRepeatInput"),
       wDeadZone: document.getElementById("wDeadZoneInput"),
@@ -537,6 +541,7 @@
           w_direction: Number(el.wDirection.value),
           w_structure: Number(el.wStructure.value),
           w_branch_urgency: Number(el.wBranchUrgency.value),
+          w_missed_branch: Number(el.wMissedBranch.value),
           w_turn: Number(el.wTurn.value),
           w_repeat: Number(el.wRepeat.value),
           w_dead_zone: Number(el.wDeadZone.value),
@@ -631,6 +636,7 @@
       setInput(el.wDirection, rolling.w_direction);
       setInput(el.wStructure, rolling.w_structure);
       setInput(el.wBranchUrgency, rolling.w_branch_urgency);
+      setInput(el.wMissedBranch, rolling.w_missed_branch);
       setInput(el.wTurn, rolling.w_turn);
       setInput(el.wRepeat, rolling.w_repeat);
       setInput(el.wDeadZone, rolling.w_dead_zone);

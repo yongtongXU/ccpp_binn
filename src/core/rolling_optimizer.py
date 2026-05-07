@@ -142,6 +142,7 @@ class RollingOptimizer:
         strip_cross_penalty = 0.0
         strip_loop_penalty = 0.0
         immediate_backtrack_penalty = 0.0
+        missed_branch = 0.0
         prev = usv.current_cell
         prev_heading = usv.heading
         current_strip = usv.current_strip_id if usv.current_strip_id is not None else usv.current_cell[1]
@@ -153,6 +154,7 @@ class RollingOptimizer:
         structure_score = 0.0
         branch_urgency = 0.0
         for i, cell in enumerate(branch):
+            missed_branch_score = self._missed_branch_score(usv.current_cell, cell, cell_map, strip_direction) if i == 0 else 0.0
             if i == 0 and len(usv.path) >= 2 and cell == usv.path[-2]:
                 immediate_backtrack_penalty += 1.0
             elif i >= 2 and cell == branch[i - 2]:
@@ -172,7 +174,10 @@ class RollingOptimizer:
                     strip_forward += 0.2
             elif abs_strip_delta == 1:
                 if current_has_forward:
-                    strip_cross_penalty += 3.0
+                    if missed_branch_score > 0.0:
+                        strip_transition += 1.0 + 0.6 * missed_branch_score
+                    else:
+                        strip_cross_penalty += 3.0
                 else:
                     strip_transition += 1.0
                     if features["uncovered"]:
@@ -203,6 +208,7 @@ class RollingOptimizer:
             structure_score += features["structure"]
             if i == 0:
                 branch_urgency += self._branch_urgency_score(usv.current_cell, cell, cell_map)
+                missed_branch += missed_branch_score
             dead_zone += features["dead_zone"]
             obstacle += features["obstacle"]
             prev = cell
@@ -212,6 +218,7 @@ class RollingOptimizer:
         direction_term = cfg.get("w_direction", 4.0) * direction_score / max(1, len(branch))
         structure_term = cfg.get("w_structure", 3.0) * structure_score / max(1, len(branch))
         branch_urgency_score = cfg.get("w_branch_urgency", 12.0) * branch_urgency
+        missed_branch_score = cfg.get("w_missed_branch", 35.0) * missed_branch
         turn_penalty = cfg.get("w_turn", 3.0) * turns
         repeat_penalty = cfg.get("w_repeat", 2.0) * repeat
         dead_zone_penalty = cfg.get("w_dead_zone", 5.0) * dead_zone / max(1, len(branch))
@@ -229,6 +236,7 @@ class RollingOptimizer:
             + direction_term
             + structure_term
             + branch_urgency_score
+            + missed_branch_score
             + strip_forward_score
             + strip_transition_score
             - turn_penalty
@@ -248,6 +256,7 @@ class RollingOptimizer:
             "direction_score": float(direction_term),
             "structure_score": float(structure_term),
             "branch_urgency_score": float(branch_urgency_score),
+            "missed_branch_score": float(missed_branch_score),
             "turn_penalty": float(turn_penalty),
             "repeat_penalty": float(repeat_penalty),
             "dead_zone_penalty": float(dead_zone_penalty),
@@ -418,6 +427,34 @@ class RollingOptimizer:
             score = 1.0 + 0.6 * size_term + 0.8 * cul_de_sac_term
         self._branch_urgency_cache[key] = score
         return score
+
+    def _missed_branch_score(self, current: Cell, first_cell: Cell, cell_map: CellMap, strip_direction: int) -> float:
+        if not cell_map.is_uncovered(first_cell):
+            return 0.0
+        dx = first_cell[0] - current[0]
+        dy = first_cell[1] - current[1]
+        if abs(dy) != 1:
+            return 0.0
+        if dx * strip_direction < 0:
+            return 0.0
+
+        y = first_cell[1]
+        if not 0 <= y < cell_map.height:
+            return 0.0
+        if strip_direction >= 0:
+            xs = range(0, current[0] + 1)
+        else:
+            xs = range(current[0], cell_map.width)
+        behind_uncovered = sum(1 for x in xs if cell_map.is_uncovered((x, y)))
+        if behind_uncovered < int(self.config.get("missed_branch_min_behind", 6)):
+            return 0.0
+
+        current_obstacle_pressure = self._obstacle_risk(cell_map, current)
+        side_obstacle_pressure = self._obstacle_risk(cell_map, first_cell)
+        geometry = max(current_obstacle_pressure, side_obstacle_pressure)
+        run_score = min(behind_uncovered / float(self.config.get("missed_branch_full_behind", 18)), 1.0)
+        geometry_score = min(geometry / 0.35, 1.0)
+        return run_score * max(0.45, geometry_score)
 
     def _uncovered_component(self, cell_map: CellMap, start: Cell) -> set[Cell]:
         seen = {start}

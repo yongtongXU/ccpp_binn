@@ -1,4 +1,4 @@
-from src.core.cell_map import CellMap, OBSTACLE
+from src.core.cell_map import COVERED, OBSTACLE, UNCOVERED, CellMap
 from src.core.escape_selector import EscapeSelector
 from src.core.usv import USV
 
@@ -56,3 +56,15 @@ def test_fusion_returns_legal_escape_target():
     assert escape_type in {"backtracking", "dijkstra"}
     assert path[0] == usv.current_cell
     assert cm.is_traversable(target)
+
+
+def test_dijkstra_prefers_axis_aligned_uncovered_entry_on_tie():
+    cm = CellMap(4, 5)
+    cm.grid[:, :] = COVERED
+    cm.visit_count[:, :] = 1
+    cm.grid[4, 1] = UNCOVERED
+    cm.grid[4, 2] = UNCOVERED
+    usv = USV((2, 1))
+    cand = EscapeSelector({"dijkstra_max_expansion": 100}).find_dijkstra_candidate(usv, cm)
+    assert cand is not None
+    assert cand.target == (2, 4)

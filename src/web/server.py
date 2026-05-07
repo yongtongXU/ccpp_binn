@@ -310,6 +310,9 @@ def apply_web_overrides(cfg: dict[str, Any], payload: dict[str, Any]) -> None:
             "w_obstacle": float,
             "w_structure": float,
             "w_branch_urgency": float,
+            "w_missed_branch": float,
+            "missed_branch_min_behind": int,
+            "missed_branch_full_behind": int,
             "w_immediate_backtrack": float,
         },
     )

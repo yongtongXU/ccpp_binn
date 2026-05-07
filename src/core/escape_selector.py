@@ -74,7 +74,7 @@ class EscapeSelector:
             return move_cost(a, b) + 0.8 * repeat + 0.3 * obstacle + 0.4 * narrow
 
         def target_condition(c: Cell) -> bool:
-            return cell_map.is_uncovered(c) or self._has_future_potential(cell_map, c)
+            return cell_map.is_uncovered(c)
 
         path, _, info = dijkstra(
             cell_map,
@@ -85,9 +85,22 @@ class EscapeSelector:
         )
         if not path:
             return None
+        path = self._prefer_axis_aligned_entry(usv.current_cell, cell_map, path)
         target = path[-1]
         score = self.evaluate_escape_candidate(cell_map, path, target)
         return EscapeCandidate(target, "dijkstra", path, score, "reachable_uncovered_or_component_entry", info)
+
+    def _prefer_axis_aligned_entry(self, start: Cell, cell_map: CellMap, path: list[Cell]) -> list[Cell]:
+        if len(path) < 2:
+            return path
+        target = path[-1]
+        axis_target = (start[0], target[1])
+        if axis_target == target or not cell_map.is_uncovered(axis_target):
+            return path
+        penultimate = path[-2]
+        if axis_target in cell_map.neighbors8(penultimate):
+            return [*path[:-1], axis_target]
+        return path
 
     def evaluate_escape_candidate(self, cell_map: CellMap, path: list[Cell], target: Cell) -> float:
         cfg = self.config

@@ -105,3 +105,37 @@ def test_fork_prefers_one_entry_branch_that_would_need_backfill():
     nxt, _, details = opt.select_next_cell(usv, cm, gbnn)
     assert nxt == (1, 2)
     assert details["branch_urgency_score"] > 0
+
+
+def test_missed_branch_bonus_enters_side_strip_before_passing_it():
+    cm = CellMap(8, 5)
+    cm.grid[:, :] = OBSTACLE
+    cm.grid[2, 0:8] = UNCOVERED
+    cm.grid[3, 0:8] = UNCOVERED
+    cm.grid[1, 0:4] = OBSTACLE
+    cm.grid[1, 4:8] = UNCOVERED
+    cm.mark_covered((3, 2))
+    usv = USV((3, 2), heading=0, current_strip_id=2, strip_direction=1)
+    gbnn = GBNNField({})
+    gbnn.initialize(cm)
+    opt = RollingOptimizer(
+        {
+            "horizon": 1,
+            "w_new_coverage": 8.0,
+            "w_activity": 0.0,
+            "w_direction": 4.0,
+            "w_structure": 0.0,
+            "w_missed_branch": 80.0,
+            "missed_branch_min_behind": 3,
+            "missed_branch_full_behind": 4,
+            "w_strip_forward": 18.0,
+            "w_strip_transition": 14.0,
+            "w_strip_cross": 35.0,
+            "w_turn": 0.0,
+            "w_dead_zone": 0.0,
+            "w_obstacle": 0.0,
+        }
+    )
+    nxt, _, details = opt.select_next_cell(usv, cm, gbnn)
+    assert nxt[1] == 3
+    assert details["missed_branch_score"] > 0
