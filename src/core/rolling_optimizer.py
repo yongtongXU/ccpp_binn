@@ -18,6 +18,7 @@ class RollingOptimizer:
     def __init__(self, config: dict | None = None):
         self.config = config or {}
         self._feature_cache: dict[Cell, dict] = {}
+        self._last_candidate_tree: dict = {"levels": []}
 
     def select_next_cell(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> tuple[Cell | None, list[Cell], dict]:
         self._feature_cache = {}
@@ -28,6 +29,7 @@ class RollingOptimizer:
                     branch = [n]
                     details = self.score_branch(usv, cell_map, gbnn_field, branch)
                     details["candidate_branches"] = _serialize_candidates(self._local_candidate_states(usv, cell_map, gbnn_field), candidate_limit)
+                    details["candidate_tree"] = _serialize_tree([self._local_candidate_states(usv, cell_map, gbnn_field)], candidate_limit)
                     return n, branch, details
             return None, [], {"reason": "rolling_disabled_no_uncovered_neighbor"}
         candidates = self.build_candidate_tree(usv, cell_map, gbnn_field)
@@ -37,6 +39,7 @@ class RollingOptimizer:
                 branch = [strip_step]
                 details = self.score_branch(usv, cell_map, gbnn_field, branch)
                 details["candidate_branches"] = _serialize_candidates(self._local_candidate_states(usv, cell_map, gbnn_field), candidate_limit)
+                details["candidate_tree"] = _serialize_tree([self._local_candidate_states(usv, cell_map, gbnn_field)], candidate_limit)
                 return strip_step, branch, details
             if self.current_strip_has_forward_uncovered(usv, cell_map):
                 fallback = self._local_strip_fallback(usv, cell_map, gbnn_field)
@@ -45,10 +48,12 @@ class RollingOptimizer:
                     details["candidate_branches"] = _serialize_candidates(
                         [BranchState(fallback, float(details["branch_score"]), details)], candidate_limit
                     )
+                    details["candidate_tree"] = _serialize_tree([[BranchState(fallback, float(details["branch_score"]), details)]], candidate_limit)
                     return fallback[0], fallback, details
             return None, [], {"reason": "no_candidate_branch"}
         best = max(candidates, key=lambda b: b.score)
         best.details["candidate_branches"] = _serialize_candidates(candidates, candidate_limit)
+        best.details["candidate_tree"] = self._last_candidate_tree
         if best.details.get("new_coverage_score", 0.0) <= 0.0 and not self.current_strip_has_forward_uncovered(usv, cell_map):
             return None, [], {"reason": "no_strip_new_coverage_candidate"}
         if best.score <= -1e8:
@@ -59,6 +64,7 @@ class RollingOptimizer:
                     details["candidate_branches"] = _serialize_candidates(
                         [BranchState(fallback, float(details["branch_score"]), details)], candidate_limit
                     )
+                    details["candidate_tree"] = _serialize_tree([[BranchState(fallback, float(details["branch_score"]), details)]], candidate_limit)
                     return fallback[0], fallback, details
             return None, [], {"reason": "invalid_candidate_score"}
         return best.branch[0], best.branch, best.details
@@ -92,8 +98,10 @@ class RollingOptimizer:
     def build_candidate_tree(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> list[BranchState]:
         horizon = int(self.config.get("horizon", 5))
         beam_width = int(self.config.get("beam_width", 30))
+        tree_limit = int(self.config.get("record_tree_count", max(beam_width, self.config.get("record_candidate_count", beam_width))))
         beam: list[list[Cell]] = [[]]
         finished: list[BranchState] = []
+        levels: list[list[BranchState]] = []
         for _ in range(horizon):
             expanded: list[BranchState] = []
             for branch in beam:
@@ -107,8 +115,10 @@ class RollingOptimizer:
             if not expanded:
                 break
             expanded.sort(key=lambda b: b.score, reverse=True)
+            levels.append(expanded[: max(1, tree_limit)])
             beam = [b.branch for b in expanded[:beam_width]]
             finished = expanded[:beam_width]
+        self._last_candidate_tree = _serialize_tree(levels, tree_limit)
         return finished
 
     def _allowed_next(self, usv: USV, cell_map: CellMap, branch: list[Cell], cell: Cell) -> bool:
@@ -384,3 +394,15 @@ def _serialize_candidates(candidates: list[BranchState], limit: int) -> list[dic
         }
         for candidate in ordered
     ]
+
+
+def _serialize_tree(levels: list[list[BranchState]], limit: int) -> dict:
+    return {
+        "levels": [
+            {
+                "depth": depth,
+                "branches": _serialize_candidates(level, limit),
+            }
+            for depth, level in enumerate(levels, start=1)
+        ]
+    }

@@ -389,6 +389,7 @@ def normalize_decisions(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for row in rows:
         item = dict(row)
         item["candidate_branches"] = parse_candidates(item.get("candidate_branches"))
+        item["candidate_tree"] = parse_tree(item.get("candidate_tree"))
         item["selected_branch"] = parse_branch(str(item.get("selected_branch", "")))
         result.append(item)
     return result
@@ -399,6 +400,18 @@ def parse_candidates(value: Any) -> list[dict[str, Any]]:
         return value
     if not value:
         return []
+
+
+def parse_tree(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {"levels": []}
+    try:
+        parsed = json.loads(str(value))
+        return parsed if isinstance(parsed, dict) else {"levels": []}
+    except json.JSONDecodeError:
+        return {"levels": []}
     try:
         parsed = json.loads(str(value))
         return parsed if isinstance(parsed, list) else []

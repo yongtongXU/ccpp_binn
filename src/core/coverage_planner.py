@@ -200,6 +200,7 @@ class CoveragePlanner:
                 "obstacle_penalty",
                 "selected_branch",
                 "candidate_branches",
+                "candidate_tree",
             ],
         )
         write_rows_csv(dirs["data"] / "escapes.csv", self.escape_rows, ["escape_id", "step", "escape_type", "start_x", "start_y", "target_x", "target_y", "path_length", "candidate_score", "reason"])
@@ -256,6 +257,7 @@ class CoveragePlanner:
             "method": self.strategy.name,
             "selected_branch": ";".join(f"{x}:{y}" for x, y in branch),
             "candidate_branches": json.dumps(self._candidate_branches(decision), ensure_ascii=True),
+            "candidate_tree": json.dumps(self._candidate_tree(decision), ensure_ascii=True),
             **{k: details.get(k) for k in ["branch_score", "new_coverage_score", "activity_score", "direction_score", "structure_score", "turn_penalty", "repeat_penalty", "dead_zone_penalty", "obstacle_penalty"]},
         }
 
@@ -274,3 +276,10 @@ class CoveragePlanner:
                 }
             ]
         return []
+
+    def _candidate_tree(self, decision: StepDecision) -> dict:
+        details = decision.details or {}
+        if "candidate_tree" in details:
+            return details["candidate_tree"]
+        branches = self._candidate_branches(decision)
+        return {"levels": [{"depth": 1, "branches": branches}]} if branches else {"levels": []}

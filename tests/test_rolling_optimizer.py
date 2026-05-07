@@ -32,6 +32,20 @@ def test_candidate_tree_expands_all_eight_directions_per_step():
     assert first_steps == set(cm.neighbors8((2, 2)))
 
 
+def test_candidate_tree_records_each_depth_level():
+    cm = CellMap(5, 5)
+    usv = USV((2, 2))
+    cm.mark_covered((2, 2))
+    gbnn = GBNNField({})
+    gbnn.initialize(cm)
+    opt = RollingOptimizer({"horizon": 3, "beam_width": 8, "record_candidate_count": 8, "record_tree_count": 64})
+    _, _, details = opt.select_next_cell(usv, cm, gbnn)
+    levels = details["candidate_tree"]["levels"]
+    assert [level["depth"] for level in levels] == [1, 2, 3]
+    assert all(level["branches"] for level in levels)
+    assert all(len(branch["path"]) == level["depth"] for level in levels for branch in level["branches"])
+
+
 def test_avoids_obstacle_and_next_is_neighbor():
     cm = CellMap(5, 5)
     cm.grid[2, 3] = OBSTACLE

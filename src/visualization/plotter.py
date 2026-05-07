@@ -241,6 +241,12 @@ def _clean_decision(row: dict) -> dict:
             candidates = json.loads(candidates)
         except json.JSONDecodeError:
             candidates = []
+    tree = row.get("candidate_tree", {"levels": []})
+    if isinstance(tree, str):
+        try:
+            tree = json.loads(tree)
+        except json.JSONDecodeError:
+            tree = {"levels": []}
     return {
         "step": int(row.get("step", 0)),
         "current": [int(row.get("current_x", 0)), int(row.get("current_y", 0))],
@@ -251,6 +257,7 @@ def _clean_decision(row: dict) -> dict:
         "score": _safe_float(row.get("branch_score")),
         "selected_branch": _parse_branch(str(row.get("selected_branch", ""))),
         "candidate_branches": candidates,
+        "candidate_tree": tree,
     }
 
 
@@ -570,18 +577,39 @@ def _viewer_html(payload_json: str) -> str:
     function drawDecision(m, decision) {{
       if (!decision) return;
       const origin = decision.current;
+      drawCandidateTree(m, origin, decision.candidate_tree);
       const candidates = decision.candidate_branches || [];
       candidates.slice().reverse().forEach((candidate, rank) => {{
         const alpha = Math.max(0.12, 0.45 - rank * 0.015);
         const cells = [origin, ...(candidate.path || [])];
         ctx.globalAlpha = alpha;
-        strokePath(cells, m, "#7b61ff", Math.max(1.6, m.cell * 0.055));
+        strokePath(cells, m, "#7b61ff", Math.max(1.4, m.cell * 0.045));
         drawPathNodes(cells.slice(1), m, "#7b61ff", 0.075);
         ctx.globalAlpha = 1;
       }});
       const selectedCells = [origin, ...(decision.selected_branch || [])];
       strokePath(selectedCells, m, "#d62728", Math.max(2.5, m.cell * 0.13));
       drawPathNodes(selectedCells.slice(1), m, "#d62728", 0.1);
+    }}
+
+    function drawCandidateTree(m, origin, tree) {{
+      const levels = tree && Array.isArray(tree.levels) ? tree.levels : [];
+      levels.forEach((level) => {{
+        const depth = Math.max(1, Number(level.depth || 1));
+        const branches = Array.isArray(level.branches) ? level.branches : [];
+        const alpha = Math.max(0.12, 0.5 - depth * 0.08);
+        const width = Math.max(1.1, m.cell * (0.07 - Math.min(depth, 5) * 0.006));
+        ctx.globalAlpha = alpha;
+        branches.forEach((branch) => {{
+          const cells = [origin, ...(branch.path || [])];
+          strokePath(cells, m, "#4f67c8", width);
+        }});
+        ctx.globalAlpha = Math.min(0.6, alpha + 0.1);
+        branches.forEach((branch) => {{
+          drawPathNodes((branch.path || []).slice(-1), m, "#4f67c8", 0.055);
+        }});
+        ctx.globalAlpha = 1;
+      }});
     }}
 
     function drawMarker(cell, m, color, radiusScale) {{
