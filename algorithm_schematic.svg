@@ -433,8 +433,7 @@
     <line x1="382" y1="65" x2="452" y2="65" class="candidate"/>
     <text x="465" y="70" class="label">Rolling candidate branches</text>
 
-    <line x1="722" y1="65" x2="792" y2="65" class="best"/>
-    <text x="807" y="70" class="label">Selected branch; execute first cell only</text>
+
   </g>
 
 
