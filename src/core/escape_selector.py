@@ -130,7 +130,8 @@ class EscapeSelector:
             return None, "none", [], {"reason": "escape_disabled"}
         method = str(self.config.get("method", "hybrid"))
         candidates = []
-        if method in ("hybrid", "backtracking"):
+        prefer_direct_uncovered = reason in {"dead_zone", "no_strip_new_coverage_candidate", "no_traversable_neighbor"}
+        if method in ("hybrid", "backtracking") and not prefer_direct_uncovered:
             backtracking = self.find_backtracking_candidate(usv, cell_map, rolling_optimizer, gbnn_field)
             if backtracking:
                 candidates.append(backtracking)
@@ -140,6 +141,10 @@ class EscapeSelector:
                 if method == "article":
                     dij.escape_type = "article_escape"
                 candidates.append(dij)
+        if method == "hybrid" and not candidates:
+            backtracking = self.find_backtracking_candidate(usv, cell_map, rolling_optimizer, gbnn_field)
+            if backtracking:
+                candidates.append(backtracking)
         if not candidates:
             return None, "none", [], {"reason": "no_escape_candidate"}
         selected = min(candidates, key=lambda c: c.score)

@@ -34,6 +34,14 @@ class RollingOptimizer:
                     details["candidate_tree"] = _serialize_tree([self._local_candidate_states(usv, cell_map, gbnn_field)], candidate_limit)
                     return n, branch, details
             return None, [], {"reason": "rolling_disabled_no_uncovered_neighbor"}
+        priority_step = self._priority_strip_step(usv, cell_map, gbnn_field) if self.config.get("use_priority_strip", True) else None
+        if priority_step is not None:
+            branch = [priority_step]
+            details = self.score_branch(usv, cell_map, gbnn_field, branch)
+            details["candidate_branches"] = _serialize_candidates(self._local_candidate_states(usv, cell_map, gbnn_field), candidate_limit)
+            details["candidate_tree"] = _serialize_tree([self._local_candidate_states(usv, cell_map, gbnn_field)], candidate_limit)
+            details["priority_rule"] = "strip_or_missed_branch"
+            return priority_step, branch, details
         candidates = self.build_candidate_tree(usv, cell_map, gbnn_field)
         if not candidates:
             strip_step = self._direct_strip_step(usv, cell_map)
@@ -71,6 +79,30 @@ class RollingOptimizer:
             return None, [], {"reason": "invalid_candidate_score"}
         return best.branch[0], best.branch, best.details
 
+    def _priority_strip_step(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> Cell | None:
+        side_step = self._missed_branch_step(usv, cell_map)
+        if side_step is not None:
+            return side_step
+        return self._direct_strip_step(usv, cell_map)
+
+    def _missed_branch_step(self, usv: USV, cell_map: CellMap) -> Cell | None:
+        current = usv.current_cell
+        direction = 1 if usv.strip_direction >= 0 else -1
+        candidates = []
+        for n in cell_map.neighbors8(current):
+            if not cell_map.is_uncovered(n):
+                continue
+            if abs(n[1] - current[1]) != 1:
+                continue
+            score = self._missed_branch_score(current, n, cell_map, direction)
+            if score > 0.0:
+                heading_bonus = 1.0 if n[0] == current[0] else 0.6 if (n[0] - current[0]) * direction > 0 else 0.0
+                candidates.append((score + heading_bonus, n))
+        if not candidates:
+            return None
+        candidates.sort(reverse=True)
+        return candidates[0][1]
+
     def _direct_strip_step(self, usv: USV, cell_map: CellMap) -> Cell | None:
         current_strip = usv.current_strip_id if usv.current_strip_id is not None else usv.current_cell[1]
         if usv.current_cell[1] != current_strip:
@@ -98,6 +130,36 @@ class RollingOptimizer:
         return candidates
 
     def build_candidate_tree(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> list[BranchState]:
+        horizon = int(self.config.get("horizon", 5))
+        beam_width = max(1, int(self.config.get("beam_width", 30)))
+        tree_limit = int(self.config.get("record_tree_count", self.config.get("record_candidate_count", 1_000_000)))
+        levels: list[list[BranchState]] = [[] for _ in range(horizon)]
+        beam: list[BranchState] = [BranchState([], 0.0, {})]
+
+        for depth in range(horizon):
+            expanded: list[BranchState] = []
+            for state in beam:
+                branch = state.branch
+                root = branch[-1] if branch else usv.current_cell
+                for n in cell_map.neighbors8(root):
+                    if not self._allowed_next(usv, cell_map, branch, n):
+                        continue
+                    new_branch = branch + [n]
+                    details = self.score_branch(usv, cell_map, gbnn_field, new_branch)
+                    expanded.append(BranchState(new_branch, float(details["branch_score"]), details))
+            expanded.sort(key=lambda b: b.score, reverse=True)
+            levels[depth] = expanded[:tree_limit]
+            beam = expanded[:beam_width]
+            if not beam:
+                break
+
+        finished = beam
+        for level in levels:
+            level.sort(key=lambda b: b.score, reverse=True)
+        self._last_candidate_tree = _serialize_tree(levels, tree_limit)
+        return finished
+
+    def _exhaustive_candidate_tree(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> list[BranchState]:
         horizon = int(self.config.get("horizon", 5))
         tree_limit = int(self.config.get("record_tree_count", self.config.get("record_candidate_count", 1_000_000)))
         levels: list[list[BranchState]] = [[] for _ in range(horizon)]
@@ -396,35 +458,10 @@ class RollingOptimizer:
             self._branch_urgency_cache[key] = 0.0
             return 0.0
 
-        component_ids: dict[Cell, int] = {}
-        components: list[set[Cell]] = []
-        for neighbor in uncovered_neighbors:
-            if neighbor in component_ids:
-                continue
-            component = self._uncovered_component(cell_map, neighbor)
-            component_id = len(components)
-            components.append(component)
-            for cell in component:
-                component_ids[cell] = component_id
-
-        first_component_id = component_ids.get(first_cell)
-        if first_component_id is None:
-            self._branch_urgency_cache[key] = 0.0
-            return 0.0
-        neighbor_component_count = len({component_ids[n] for n in uncovered_neighbors if n in component_ids})
-        if neighbor_component_count < 2:
-            self._branch_urgency_cache[key] = 0.0
-            return 0.0
-
-        component = components[first_component_id]
-        entrances = self._component_entrances(cell_map, component)
-        entrance_count = len(entrances)
-        if entrance_count > 1:
-            score = 0.0
-        else:
-            size_term = min(len(component), 30) / 30.0
-            cul_de_sac_term = self._cul_de_sac_ratio(cell_map, component)
-            score = 1.0 + 0.6 * size_term + 0.8 * cul_de_sac_term
+        degree = sum(1 for n in cell_map.neighbors8(first_cell) if cell_map.is_uncovered(n))
+        obstacle_pressure = self._obstacle_risk(cell_map, first_cell)
+        terminal_score = 1.0 if degree <= 1 else 0.45 if degree == 2 else 0.0
+        score = terminal_score * (0.7 + 0.6 * obstacle_pressure)
         self._branch_urgency_cache[key] = score
         return score
 
@@ -455,41 +492,6 @@ class RollingOptimizer:
         run_score = min(behind_uncovered / float(self.config.get("missed_branch_full_behind", 18)), 1.0)
         geometry_score = min(geometry / 0.35, 1.0)
         return run_score * max(0.45, geometry_score)
-
-    def _uncovered_component(self, cell_map: CellMap, start: Cell) -> set[Cell]:
-        seen = {start}
-        stack = [start]
-        while stack:
-            cell = stack.pop()
-            for neighbor in cell_map.neighbors8(cell):
-                if neighbor not in seen and cell_map.is_uncovered(neighbor):
-                    seen.add(neighbor)
-                    stack.append(neighbor)
-        return seen
-
-    def _component_entrances(self, cell_map: CellMap, component: set[Cell]) -> set[Cell]:
-        entrances: set[Cell] = set()
-        for cell in component:
-            x, y = cell
-            for dy in (-1, 0, 1):
-                for dx in (-1, 0, 1):
-                    if dx == 0 and dy == 0:
-                        continue
-                    neighbor = (x + dx, y + dy)
-                    if neighbor not in component and cell_map.is_traversable(neighbor) and not cell_map.is_uncovered(neighbor):
-                        entrances.add(neighbor)
-        return entrances
-
-    def _cul_de_sac_ratio(self, cell_map: CellMap, component: set[Cell]) -> float:
-        if not component:
-            return 0.0
-        terminal = 0
-        for cell in component:
-            uncovered_degree = sum(1 for neighbor in cell_map.neighbors8(cell) if neighbor in component)
-            if uncovered_degree <= 1:
-                terminal += 1
-        return terminal / len(component)
-
 
 def _heading_between(a: Cell, b: Cell) -> int | None:
     dx = 0 if b[0] == a[0] else (1 if b[0] > a[0] else -1)

@@ -38,7 +38,7 @@ def test_candidate_tree_records_each_depth_level():
     cm.mark_covered((2, 2))
     gbnn = GBNNField({})
     gbnn.initialize(cm)
-    opt = RollingOptimizer({"horizon": 3, "beam_width": 8, "record_candidate_count": 8, "record_tree_count": 64})
+    opt = RollingOptimizer({"horizon": 3, "beam_width": 8, "record_candidate_count": 8, "record_tree_count": 64, "use_priority_strip": False})
     _, _, details = opt.select_next_cell(usv, cm, gbnn)
     levels = details["candidate_tree"]["levels"]
     assert [level["depth"] for level in levels] == [1, 2, 3]
@@ -89,6 +89,7 @@ def test_fork_prefers_one_entry_branch_that_would_need_backfill():
     opt = RollingOptimizer(
         {
             "horizon": 1,
+            "use_priority_strip": False,
             "w_new_coverage": 1.0,
             "w_activity": 0.0,
             "w_direction": 0.0,

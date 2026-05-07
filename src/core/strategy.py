@@ -5,6 +5,7 @@ from typing import Protocol
 
 from src.core.cell_map import Cell, CellMap
 from src.core.escape_selector import EscapeSelector
+from src.core.graph_search import astar
 from src.core.gbnn_field import GBNNField
 from src.core.rolling_optimizer import RollingOptimizer
 from src.core.usv import USV
@@ -45,16 +46,24 @@ class RollingGBNNStrategy:
         self._escape_path: list[Cell] = []
         self._escape_type = "none"
         self._escape_id = 0
+        self._strip_plan: list[Cell] = []
+        self._strip_plan_index = 0
 
     def choose_next(self, step: int, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> StepDecision:
+        if self.config.get("rolling_optimizer", {}).get("use_global_strip_plan", True):
+            planned = self._next_strip_plan_step(usv, cell_map, gbnn_field)
+            if planned is not None:
+                return planned
         if self._escape_path:
             return self._continue_escape(usv)
 
         next_cell, branch, details = self.rolling.select_next_cell(usv, cell_map, gbnn_field)
-        if next_cell is None and self._escape_allowed(usv, cell_map, gbnn_field):
-            return self._start_escape(step, usv, cell_map, gbnn_field)
+        if cell_map.is_dead_zone(usv.current_cell) and (next_cell is None or not cell_map.is_uncovered(next_cell)):
+            return self._start_escape(step, usv, cell_map, gbnn_field, reason="dead_zone")
 
         if next_cell is None:
+            if self._escape_allowed(usv, cell_map, gbnn_field):
+                return self._start_escape(step, usv, cell_map, gbnn_field, reason="rolling_none_strip_stagnation")
             fallback = self.rolling._local_strip_fallback(usv, cell_map, gbnn_field)
             if not fallback:
                 return StepDecision(None, [], details, failure_reason="rolling_failed_escape_not_allowed")
@@ -72,6 +81,69 @@ class RollingGBNNStrategy:
     def after_step(self, coverage_rate: float) -> None:
         self.coverage_history.append(coverage_rate)
 
+    def _next_strip_plan_step(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> StepDecision | None:
+        if not self._strip_plan:
+            self._strip_plan = self._build_strip_plan(usv.current_cell, cell_map)
+            self._strip_plan_index = 0
+        while self._strip_plan_index < len(self._strip_plan) and self._strip_plan[self._strip_plan_index] == usv.current_cell:
+            self._strip_plan_index += 1
+        while self._strip_plan_index < len(self._strip_plan) and cell_map.visit_count[self._strip_plan[self._strip_plan_index][1], self._strip_plan[self._strip_plan_index][0]] > 0:
+            self._strip_plan_index += 1
+        if self._strip_plan_index >= len(self._strip_plan):
+            return None
+        next_cell = self._strip_plan[self._strip_plan_index]
+        if next_cell not in cell_map.neighbors8(usv.current_cell):
+            path, _, _ = astar(cell_map, usv.current_cell, next_cell)
+            if not path or len(path) < 2:
+                return None
+            next_cell = path[1]
+        details = self.rolling.score_branch(usv, cell_map, gbnn_field, [next_cell])
+        details["candidate_branches"] = [
+            {"type": "global_strip_plan", "score": details["branch_score"], "path": [[int(next_cell[0]), int(next_cell[1])]]}
+        ]
+        details["candidate_tree"] = {"levels": [{"depth": 1, "branches": details["candidate_branches"]}]}
+        details["priority_rule"] = "global_strip_plan"
+        return StepDecision(next_cell, [next_cell], details, advance_strip=next_cell[1] != usv.current_strip_id)
+
+    def _build_strip_plan(self, start: Cell, cell_map: CellMap) -> list[Cell]:
+        plan = [start]
+        current = start
+        for y in range(cell_map.height):
+            segments = self._row_segments(cell_map, y)
+            if y % 2 == 1:
+                segments = list(reversed(segments))
+            for x0, x1 in segments:
+                cells = [(x, y) for x in range(x0, x1 + 1)]
+                if y % 2 == 1:
+                    cells.reverse()
+                if current in cells:
+                    idx = cells.index(current)
+                    cells = cells[idx + 1 :]
+                elif cells:
+                    connector, _, _ = astar(cell_map, current, cells[0])
+                    if connector:
+                        plan.extend(connector[1:])
+                    current = cells[0]
+                plan.extend(c for c in cells if c != current)
+                if cells:
+                    current = cells[-1]
+        return plan
+
+    def _row_segments(self, cell_map: CellMap, y: int) -> list[tuple[int, int]]:
+        segments: list[tuple[int, int]] = []
+        x = 0
+        while x < cell_map.width:
+            while x < cell_map.width and not cell_map.is_traversable((x, y)):
+                x += 1
+            if x >= cell_map.width:
+                break
+            start = x
+            while x + 1 < cell_map.width and cell_map.is_traversable((x + 1, y)):
+                x += 1
+            segments.append((start, x))
+            x += 1
+        return segments
+
     def _continue_escape(self, usv: USV) -> StepDecision:
         next_cell = self._escape_path.pop(0)
         if next_cell == usv.current_cell and self._escape_path:
@@ -87,8 +159,7 @@ class RollingGBNNStrategy:
             escape_type = self._escape_type
         return StepDecision(next_cell, [next_cell, *self._escape_path], {}, mode="escape", escape_type=escape_type)
 
-    def _start_escape(self, step: int, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> StepDecision:
-        reason = "rolling_none_strip_stagnation"
+    def _start_escape(self, step: int, usv: USV, cell_map: CellMap, gbnn_field: GBNNField, reason: str = "rolling_none_strip_stagnation") -> StepDecision:
         target_cell, escape_type, escape_path, debug = self.escape.select_escape_target(
             usv, cell_map, self.rolling, gbnn_field, reason=reason
         )

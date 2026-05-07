@@ -34,6 +34,8 @@ gbnn:
 
 rolling_optimizer:
   enabled: true
+  use_global_strip_plan: true
+  use_priority_strip: true
   horizon: 3
   beam_width: 30
   record_candidate_count: 1000000
