@@ -88,6 +88,12 @@ class CellMap:
                     result.append(n)
         return result
 
+    def has_uncovered_neighbor8(self, cell: Cell) -> bool:
+        return any(self.is_uncovered(n) for n in self.neighbors8(cell))
+
+    def is_dead_zone(self, cell: Cell) -> bool:
+        return self.is_traversable(cell) and not self.has_uncovered_neighbor8(cell)
+
     def all_traversable_cells(self) -> list[Cell]:
         ys, xs = np.where(self.grid != OBSTACLE)
         return list(zip(xs.astype(int).tolist(), ys.astype(int).tolist()))

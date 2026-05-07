@@ -143,6 +143,23 @@
       overflow: hidden;
       position: relative;
     }
+    .tabs {
+      position: absolute;
+      right: 12px;
+      top: 12px;
+      display: flex;
+      gap: 6px;
+      z-index: 2;
+    }
+    .tabs button {
+      height: 30px;
+      background: rgba(255, 255, 255, 0.92);
+    }
+    .tabs button.active {
+      background: #1769aa;
+      border-color: #1769aa;
+      color: #fff;
+    }
     canvas {
       display: block;
       width: 100%;
@@ -218,6 +235,11 @@
       line-height: 1.5;
       min-height: 20px;
     }
+    progress {
+      width: 100%;
+      height: 12px;
+      margin-top: 10px;
+    }
     @media (max-width: 960px) {
       .app {
         grid-template-columns: 1fr;
@@ -256,13 +278,20 @@
           <select id="methodSelect">
             <option value="rolling_gbnn">rolling_gbnn</option>
             <option value="gbnn_greedy">gbnn_greedy</option>
+            <option value="original_binn">original_binn</option>
+            <option value="improved_binn">improved_binn</option>
           </select>
         </label>
         <label>最大步数
           <input id="maxStepsInput" type="number" min="1" value="30000">
         </label>
-        <label>目标覆盖率
-          <input id="targetInput" type="number" min="0.01" max="1" step="0.01" value="1">
+        <label>逃逸方式
+          <select id="escapeMethodSelect">
+            <option value="hybrid">当前混合逃逸</option>
+            <option value="backtracking">回溯法</option>
+            <option value="article">文献逃逸方式</option>
+            <option value="dijkstra">Dijkstra 逃逸</option>
+          </select>
         </label>
       </fieldset>
       <fieldset>
@@ -279,6 +308,7 @@
         </label>
       </fieldset>
       <button id="runBtn" class="primary">运行规划</button>
+      <progress id="planProgress" max="100" value="0"></progress>
       <div id="message" class="message">加载场景中...</div>
       <div class="links" id="outputLinks"></div>
       <div class="legend">
@@ -291,6 +321,10 @@
     </aside>
     <main>
       <section class="stage">
+        <div class="tabs">
+          <button id="mapTabBtn" class="active">覆盖路径</button>
+          <button id="activityTabBtn">神经元活性</button>
+        </div>
         <canvas id="canvas"></canvas>
       </section>
       <section class="status">
@@ -320,6 +354,13 @@
         <div class="inline"><input id="noGbnnInput" type="checkbox">关闭 GBNN</div>
         <div class="inline"><input id="noRollingInput" type="checkbox">关闭 Rolling</div>
         <div class="inline"><input id="noEscapeInput" type="checkbox">关闭 Escape</div>
+      </fieldset>
+      <fieldset>
+        <legend>GBNN 模版匹配</legend>
+        <div class="inline"><input id="templateMatchInput" type="checkbox">启用模版匹配</div>
+        <label>模版匹配权重
+          <input id="templateWeightInput" type="number" step="0.01" value="0.35">
+        </label>
       </fieldset>
       <fieldset>
         <legend>滚动候选树</legend>
@@ -391,18 +432,18 @@
     const state = {
       data: null,
       index: 0,
+      frames: [],
+      activeTab: "map",
       playing: false,
       speed: 1,
       lastTime: 0,
-      streaming: false,
-      runId: null,
     };
 
     const el = {
       scenario: document.getElementById("scenarioSelect"),
       method: document.getElementById("methodSelect"),
       maxSteps: document.getElementById("maxStepsInput"),
-      target: document.getElementById("targetInput"),
+      escapeMethod: document.getElementById("escapeMethodSelect"),
       noGbnn: document.getElementById("noGbnnInput"),
       noRolling: document.getElementById("noRollingInput"),
       noEscape: document.getElementById("noEscapeInput"),
@@ -423,12 +464,17 @@
       gbnnIterations: document.getElementById("gbnnIterationsInput"),
       neighborWeight: document.getElementById("neighborWeightInput"),
       transferBeta: document.getElementById("transferBetaInput"),
+      templateMatch: document.getElementById("templateMatchInput"),
+      templateWeight: document.getElementById("templateWeightInput"),
       backtrackingMax: document.getElementById("backtrackingMaxInput"),
       dijkstraMax: document.getElementById("dijkstraMaxInput"),
       saveAnimation: document.getElementById("saveAnimationInput"),
       fps: document.getElementById("fpsInput"),
       maxFrames: document.getElementById("maxFramesInput"),
       run: document.getElementById("runBtn"),
+      planProgress: document.getElementById("planProgress"),
+      mapTab: document.getElementById("mapTabBtn"),
+      activityTab: document.getElementById("activityTabBtn"),
       message: document.getElementById("message"),
       outputLinks: document.getElementById("outputLinks"),
       canvas: document.getElementById("canvas"),
@@ -464,15 +510,15 @@
 
     async function runPlanner() {
       el.run.disabled = true;
-      el.message.textContent = "规划运行中，正在实时接收步骤...";
+      el.planProgress.removeAttribute("value");
+      el.message.textContent = "正在规划，请稍候...";
       el.outputLinks.innerHTML = "";
       try {
         const payload = {
-          run_id: makeRunId(),
           scenario: el.scenario.value,
           method: el.method.value,
           max_steps: Number(el.maxSteps.value),
-          target_coverage_rate: Number(el.target.value),
+          escape_method: el.escapeMethod.value,
           no_gbnn: el.noGbnn.checked,
           no_rolling: el.noRolling.checked,
           no_escape: el.noEscape.checked,
@@ -494,6 +540,8 @@
           iterations_per_step: Number(el.gbnnIterations.value),
           neighbor_weight: Number(el.neighborWeight.value),
           transfer_beta: Number(el.transferBeta.value),
+          template_matching_enabled: el.templateMatch.checked,
+          template_match_weight: Number(el.templateWeight.value),
           backtracking_max_steps: Number(el.backtrackingMax.value),
           dijkstra_max_expansion: Number(el.dijkstraMax.value),
           save_animation: el.saveAnimation.checked,
@@ -503,43 +551,29 @@
           playback_speed: Number(el.speed.value),
           stream_delay_ms: Math.round(120 / Math.max(0.1, Number(el.speed.value))),
         };
-        state.runId = payload.run_id;
-        state.streaming = true;
-        state.playing = true;
-        el.play.textContent = "暂停";
-        const res = await fetch("/api/run-stream", {
+        const res = await fetch("/api/run", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify(payload),
         });
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || "运行失败");
-        }
-        await consumeRunStream(res);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "运行失败");
+        state.data = prepareData(data);
+        state.frames = buildFrames(state.data);
+        state.index = 0;
+        state.playing = false;
+        el.play.textContent = "播放";
+        el.stepSlider.max = Math.max(0, state.frames.length - 1);
+        el.planProgress.value = 100;
+        el.message.textContent = `规划完成，覆盖率 ${(Number(data.metrics.coverage_rate) * 100).toFixed(2)}%。`;
+        renderLinks(data.outputs);
+        draw();
       } catch (err) {
         el.message.textContent = err.message;
       } finally {
-        state.streaming = false;
-        state.runId = null;
         el.run.disabled = false;
+        if (!el.planProgress.value) el.planProgress.value = 0;
       }
-    }
-
-    function makeRunId() {
-      if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
-      return `run-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    }
-
-    async function controlRun(action) {
-      if (!state.runId) return;
-      const res = await fetch("/api/control", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({run_id: state.runId, action}),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `控制失败：${action}`);
     }
 
     async function loadScenarioMap() {
@@ -561,9 +595,10 @@
           repeated_coverage_rate: 0,
         }],
         decisionRows: [],
+        activity: [],
       });
+      state.frames = buildFrames(state.data);
       state.index = 0;
-      state.streaming = false;
       state.playing = false;
       el.stepSlider.max = 0;
       el.play.textContent = "播放";
@@ -579,8 +614,8 @@
       const method = config.method || {};
       const animation = (config.output || {}).animation || {};
       setInput(el.maxSteps, planner.max_steps);
-      setInput(el.target, planner.target_coverage_rate);
       setInput(el.method, method.name);
+      setInput(el.escapeMethod, escape.method || "hybrid");
       setInput(el.horizon, rolling.horizon);
       setInput(el.beamWidth, rolling.beam_width);
       setInput(el.candidateCount, rolling.record_candidate_count || 1000000);
@@ -598,6 +633,8 @@
       setInput(el.gbnnIterations, gbnn.iterations_per_step);
       setInput(el.neighborWeight, gbnn.neighbor_weight);
       setInput(el.transferBeta, gbnn.transfer_beta);
+      el.templateMatch.checked = Boolean(gbnn.template_matching_enabled);
+      setInput(el.templateWeight, gbnn.template_match_weight);
       setInput(el.backtrackingMax, escape.backtracking_max_steps);
       setInput(el.dijkstraMax, escape.dijkstra_max_expansion);
       setInput(el.fps, animation.fps);
@@ -609,80 +646,22 @@
       if (value !== undefined && value !== null) input.value = String(value);
     }
 
-    async function consumeRunStream(res) {
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const {value, done} = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, {stream: true});
-        const lines = buffer.split("\n");
-        buffer = lines.pop();
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          handleRunEvent(JSON.parse(line));
-        }
-      }
-      if (buffer.trim()) handleRunEvent(JSON.parse(buffer));
-    }
-
-    function handleRunEvent(event) {
-      if (event.type === "error") throw new Error(event.error || "流式运行失败");
-      if (event.type === "init") {
-        state.data = prepareData({
-          scenario: event.scenario,
-          map: event.map,
-          pathRows: [event.pathRow],
-          decisionRows: [],
-          outputs: event.outputs,
-        });
-        state.index = 0;
-        state.speed = Number(el.speed.value);
-        el.playSpeed.value = String(state.speed);
-        el.stepSlider.max = 0;
-        el.message.textContent = `开始规划：${event.scenario}`;
-        draw();
-        return;
-      }
-      if (event.type === "step") {
-        state.data.pathRows.push(event.pathRow);
-        if (!state.data.decisions.has(Number(event.decisionRow.step))) {
-          state.data.decisionRows.push(event.decisionRow);
-          state.data.decisions.set(Number(event.decisionRow.step), event.decisionRow);
-        }
-        el.stepSlider.max = Math.max(0, state.data.pathRows.length - 1);
-        if (state.playing) state.index = state.data.pathRows.length - 1;
-        el.message.textContent = `规划中：step ${event.pathRow.step}，覆盖率 ${(Number(event.pathRow.coverage_rate) * 100).toFixed(2)}%。`;
-        draw();
-        return;
-      }
-      if (event.type === "decision") {
-        state.data.decisionRows.push(event.decisionRow);
-        state.data.decisions.set(Number(event.decisionRow.step), event.decisionRow);
-        state.index = state.data.pathRows.length - 1;
-        el.message.textContent = `决策中：step ${event.decisionRow.step}，候选路径 ${(event.decisionRow.candidate_branches || []).length} 条。`;
-        draw();
-        return;
-      }
-      if (event.type === "stopped") {
-        el.message.textContent = `规划停止：${event.reason}`;
-        return;
-      }
-      if (event.type === "done") {
-        state.streaming = false;
-        state.playing = false;
-        el.play.textContent = "播放";
-        el.message.textContent = `完成，覆盖率 ${(Number(event.metrics.coverage_rate) * 100).toFixed(2)}%。`;
-        renderLinks(event.outputs);
-        draw();
-      }
-    }
-
     function prepareData(data) {
       const decisions = new Map();
       (data.decisionRows || []).forEach((row) => decisions.set(Number(row.step), row));
       return {...data, decisions, obstacles: new Set(data.map.obstacles.map((cell) => `${cell[0]},${cell[1]}`))};
+    }
+
+    function buildFrames(data) {
+      const frames = [];
+      const rows = data.pathRows || [];
+      if (!rows.length) return frames;
+      frames.push({type: "state", rowIndex: 0});
+      for (let step = 1; step < rows.length; step++) {
+        if (data.decisions.has(step)) frames.push({type: "decision", rowIndex: step - 1, decisionStep: step});
+        frames.push({type: "state", rowIndex: step});
+      }
+      return frames;
     }
 
     function renderLinks(outputs) {
@@ -742,9 +721,33 @@
       }
     }
 
+    function drawActivityGrid(metrics) {
+      const data = state.data;
+      const activity = data.activity || [];
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, el.canvas.width, el.canvas.height);
+      for (let y = 0; y < data.map.height; y++) {
+        for (let x = 0; x < data.map.width; x++) {
+          const key = `${x},${y}`;
+          const px = metrics.left + x * metrics.cell;
+          const py = metrics.top + (data.map.height - y - 1) * metrics.cell;
+          const v = activity[y] && activity[y][x] !== undefined ? Number(activity[y][x]) : 0;
+          const r = Math.round(40 + 210 * v);
+          const g = Math.round(55 + 120 * (1 - Math.abs(v - 0.5) * 2));
+          const b = Math.round(135 + 80 * (1 - v));
+          ctx.fillStyle = data.obstacles.has(key) ? "#222222" : `rgb(${r},${g},${b})`;
+          ctx.fillRect(px, py, metrics.cell, metrics.cell);
+          ctx.strokeStyle = "#c9d1d9";
+          ctx.lineWidth = Math.max(0.5, metrics.cell * 0.025);
+          ctx.strokeRect(px, py, metrics.cell, metrics.cell);
+        }
+      }
+    }
+
     function coveredCells() {
       const covered = new Set();
-      for (let i = 0; i <= state.index; i++) {
+      const frame = state.frames[state.index] || {rowIndex: 0};
+      for (let i = 0; i <= frame.rowIndex; i++) {
         const row = state.data.pathRows[i];
         covered.add(`${row.x},${row.y}`);
       }
@@ -784,7 +787,9 @@
 
     function drawExecuted(metrics) {
       const rows = state.data.pathRows;
-      for (let i = 1; i <= state.index; i++) {
+      const frame = state.frames[state.index] || {rowIndex: 0};
+      const lastRow = Math.min(frame.rowIndex, rows.length - 1);
+      for (let i = 1; i <= lastRow; i++) {
         const prev = rows[i - 1];
         const row = rows[i];
         const segment = [[prev.x, prev.y], [row.x, row.y]];
@@ -849,10 +854,22 @@
         ctx.clearRect(0, 0, el.canvas.width, el.canvas.height);
         return;
       }
+      const frame = state.frames[state.index] || {type: "state", rowIndex: 0};
       const rows = state.data.pathRows;
-      const row = rows[state.index];
-      const decision = state.data.decisions.get(Number(row.step) + 1) || state.data.decisions.get(Number(row.step));
+      const row = rows[frame.rowIndex];
+      const decision = frame.type === "decision" ? state.data.decisions.get(frame.decisionStep) : null;
       const metrics = getMetrics();
+      if (state.activeTab === "activity") {
+        drawActivityGrid(metrics);
+        el.step.textContent = String(row.step);
+        el.coverage.textContent = `${(Number(row.coverage_rate) * 100).toFixed(1)}%`;
+        el.mode.textContent = "activity";
+        el.selected.textContent = "-";
+        el.score.textContent = "-";
+        el.candidate.textContent = "-";
+        el.stepSlider.value = String(state.index);
+        return;
+      }
       drawGrid(metrics, coveredCells());
       drawExecuted(metrics);
       drawDecision(metrics, decision);
@@ -869,14 +886,14 @@
 
     function setIndex(next) {
       if (!state.data) return;
-      state.index = Math.max(0, Math.min(state.data.pathRows.length - 1, next));
+      state.index = Math.max(0, Math.min(state.frames.length - 1, next));
       draw();
     }
 
     function tick(time) {
       const delay = 500 / Math.max(0.1, state.speed);
-      if (!state.streaming && state.playing && state.data && time - state.lastTime >= delay) {
-        setIndex(state.index >= state.data.pathRows.length - 1 ? 0 : state.index + 1);
+      if (state.playing && state.data && time - state.lastTime >= delay) {
+        setIndex(state.index >= state.frames.length - 1 ? 0 : state.index + 1);
         state.lastTime = time;
       }
       requestAnimationFrame(tick);
@@ -884,18 +901,22 @@
 
     el.run.addEventListener("click", runPlanner);
     el.scenario.addEventListener("change", () => loadScenarioMap().catch((err) => { el.message.textContent = err.message; }));
+    el.mapTab.addEventListener("click", () => {
+      state.activeTab = "map";
+      el.mapTab.classList.add("active");
+      el.activityTab.classList.remove("active");
+      draw();
+    });
+    el.activityTab.addEventListener("click", () => {
+      state.activeTab = "activity";
+      el.activityTab.classList.add("active");
+      el.mapTab.classList.remove("active");
+      draw();
+    });
     el.prev.addEventListener("click", () => setIndex(state.index - 1));
     el.next.addEventListener("click", () => setIndex(state.index + 1));
     el.play.addEventListener("click", async () => {
       try {
-        if (state.streaming) {
-          const nextPlaying = !state.playing;
-          await controlRun(nextPlaying ? "resume" : "pause");
-          state.playing = nextPlaying;
-          el.play.textContent = state.playing ? "暂停" : "播放";
-          el.message.textContent = state.playing ? "规划已继续。" : "规划已暂停。";
-          return;
-        }
         state.playing = !state.playing;
         el.play.textContent = state.playing ? "暂停" : "播放";
       } catch (err) {

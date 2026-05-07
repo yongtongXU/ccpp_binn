@@ -48,6 +48,8 @@ class GBNNField:
                     shifted[ys, xs] = positive_activity[tys, txs]
                     spread += shifted
             raw = external + neighbor_weight * spread / 8.0
+            if cfg.get("template_matching_enabled", False):
+                raw += float(cfg.get("template_match_weight", 0.35)) * self._template_match_score(cell_map)
             self.activity = self._transfer(raw)
             self.activity[cell_map.grid == OBSTACLE] = float(cfg.get("activity_min", -1.0))
 
@@ -61,6 +63,36 @@ class GBNNField:
         activity[middle] = beta * raw[middle]
         activity[raw >= 1.0] = upper
         return np.clip(activity, lower, upper)
+
+    def _template_match_score(self, cell_map: CellMap) -> np.ndarray:
+        score = np.zeros((cell_map.height, cell_map.width), dtype=float)
+        traversable = cell_map.grid != OBSTACLE
+        uncovered = cell_map.grid == UNCOVERED
+        for y in range(cell_map.height):
+            for x in range(cell_map.width):
+                if not traversable[y, x]:
+                    continue
+                neighbors = []
+                uncovered_count = 0
+                obstacle_count = 0
+                for dy in (-1, 0, 1):
+                    for dx in (-1, 0, 1):
+                        if dx == 0 and dy == 0:
+                            continue
+                        nx, ny = x + dx, y + dy
+                        if nx < 0 or nx >= cell_map.width or ny < 0 or ny >= cell_map.height or cell_map.grid[ny, nx] == OBSTACLE:
+                            obstacle_count += 1
+                            continue
+                        if uncovered[ny, nx]:
+                            uncovered_count += 1
+                            neighbors.append((dx, dy))
+                if uncovered_count == 0:
+                    score[y, x] = -1.0
+                else:
+                    diagonal = sum(1 for dx, dy in neighbors if dx != 0 and dy != 0)
+                    axial = uncovered_count - diagonal
+                    score[y, x] = 0.25 * axial + 0.15 * diagonal - 0.08 * obstacle_count
+        return score
 
     def get_activity(self, cell: Cell) -> float:
         if self.activity is None:

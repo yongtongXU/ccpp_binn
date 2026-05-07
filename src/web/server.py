@@ -261,6 +261,7 @@ def run_planner(payload: dict[str, Any]) -> dict[str, Any]:
         },
         "pathRows": planner.path_rows,
         "decisionRows": normalize_decisions(planner.decision_rows),
+        "activity": activity_grid(planner),
         "outputs": output_links(output_dir),
     }
 
@@ -284,13 +285,13 @@ def apply_web_overrides(cfg: dict[str, Any], payload: dict[str, Any]) -> None:
         output_root = ROOT / output_root
     cfg.setdefault("output", {})["root"] = str(output_root)
     cfg.setdefault("planner", {})["max_steps"] = int(payload.get("max_steps") or cfg.get("planner", {}).get("max_steps", 30000))
-    if payload.get("target_coverage_rate") is not None:
-        cfg.setdefault("planner", {})["target_coverage_rate"] = float(payload["target_coverage_rate"])
     if payload.get("method"):
         cfg.setdefault("method", {})["name"] = str(payload["method"])
     cfg.setdefault("gbnn", {})["enabled"] = not bool(payload.get("no_gbnn", False))
     cfg.setdefault("rolling_optimizer", {})["enabled"] = not bool(payload.get("no_rolling", False))
     cfg.setdefault("escape", {})["enabled"] = not bool(payload.get("no_escape", False))
+    if payload.get("escape_method"):
+        cfg.setdefault("escape", {})["method"] = str(payload["escape_method"])
     apply_numeric_overrides(
         cfg.setdefault("rolling_optimizer", {}),
         payload,
@@ -323,8 +324,11 @@ def apply_web_overrides(cfg: dict[str, Any], payload: dict[str, Any]) -> None:
             "covered_input": float,
             "neighbor_weight": float,
             "transfer_beta": float,
+            "template_match_weight": float,
         },
     )
+    if "template_matching_enabled" in payload:
+        cfg.setdefault("gbnn", {})["template_matching_enabled"] = bool(payload["template_matching_enabled"])
     apply_numeric_overrides(
         cfg.setdefault("escape", {}),
         payload,
@@ -367,6 +371,11 @@ def planner_map(planner: CoveragePlanner) -> dict[str, Any]:
         "obstacles": obstacle_cells_from_map(planner.cell_map),
         "start": [int(planner.usv.path[0][0]), int(planner.usv.path[0][1])],
     }
+
+
+def activity_grid(planner: CoveragePlanner) -> list[list[float]]:
+    activity = planner.gbnn.normalized_activity()
+    return activity.tolist() if activity.size else []
 
 
 def obstacle_cells_from_map(cell_map: CellMap) -> list[list[int]]:

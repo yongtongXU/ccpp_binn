@@ -9,7 +9,6 @@ start:
   y: 0
 
 planner:
-  target_coverage_rate: 1.0
   max_steps: 30000
   random_seed: 42
   stagnation_steps: 20
@@ -22,6 +21,8 @@ method:
 
 gbnn:
   enabled: true
+  template_matching_enabled: false
+  template_match_weight: 0.35
   iterations_per_step: 1
   external_excitation: 1.0
   obstacle_inhibition: -2.0
@@ -51,6 +52,7 @@ rolling_optimizer:
 
 escape:
   enabled: true
+  method: hybrid
   backtracking_enabled: true
   dijkstra_enabled: true
   backtracking_max_steps: 500

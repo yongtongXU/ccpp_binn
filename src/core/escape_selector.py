@@ -115,13 +115,18 @@ class EscapeSelector:
     ) -> tuple[Cell | None, str, list[Cell], dict]:
         if self.config.get("enabled", True) is False:
             return None, "none", [], {"reason": "escape_disabled"}
+        method = str(self.config.get("method", "hybrid"))
         candidates = []
-        backtracking = self.find_backtracking_candidate(usv, cell_map, rolling_optimizer, gbnn_field)
-        if backtracking:
-            candidates.append(backtracking)
-        dij = self.find_dijkstra_candidate(usv, cell_map)
-        if dij:
-            candidates.append(dij)
+        if method in ("hybrid", "backtracking"):
+            backtracking = self.find_backtracking_candidate(usv, cell_map, rolling_optimizer, gbnn_field)
+            if backtracking:
+                candidates.append(backtracking)
+        if method in ("hybrid", "dijkstra", "article"):
+            dij = self.find_dijkstra_candidate(usv, cell_map)
+            if dij:
+                if method == "article":
+                    dij.escape_type = "article_escape"
+                candidates.append(dij)
         if not candidates:
             return None, "none", [], {"reason": "no_escape_candidate"}
         selected = min(candidates, key=lambda c: c.score)

@@ -37,7 +37,7 @@ class CoveragePlanner:
     def run(self, output_root: str | Path | None = None, save_outputs: bool = True) -> dict:
         planner_cfg = self.config.get("planner", {})
         max_steps = int(planner_cfg.get("max_steps", 30000))
-        target = float(planner_cfg.get("target_coverage_rate", 1.0))
+        target = 1.0
         output_root = output_root or self.config.get("output", {}).get("root", "outputs")
         self.cell_map.mark_covered(self.usv.current_cell)
         self.gbnn.initialize(self.cell_map)
@@ -97,7 +97,7 @@ class CoveragePlanner:
     def run_events(self, output_root: str | Path | None = None, save_outputs: bool = True):
         planner_cfg = self.config.get("planner", {})
         max_steps = int(planner_cfg.get("max_steps", 30000))
-        target = float(planner_cfg.get("target_coverage_rate", 1.0))
+        target = 1.0
         output_root = output_root or self.config.get("output", {}).get("root", "outputs")
         self.cell_map.mark_covered(self.usv.current_cell)
         self.gbnn.initialize(self.cell_map)
