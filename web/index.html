@@ -247,6 +247,37 @@
   <div class="app">
     <aside class="control-panel">
       <h1>路径规划控制台</h1>
+      <fieldset>
+        <legend>场景与算法</legend>
+        <label>场景
+          <select id="scenarioSelect"></select>
+        </label>
+        <label>方法
+          <select id="methodSelect">
+            <option value="rolling_gbnn">rolling_gbnn</option>
+            <option value="gbnn_greedy">gbnn_greedy</option>
+          </select>
+        </label>
+        <label>最大步数
+          <input id="maxStepsInput" type="number" min="1" value="30000">
+        </label>
+        <label>目标覆盖率
+          <input id="targetInput" type="number" min="0.01" max="1" step="0.01" value="1">
+        </label>
+      </fieldset>
+      <fieldset>
+        <legend>输出与播放</legend>
+        <div class="inline"><input id="saveAnimationInput" type="checkbox">同时保存 GIF/HTML 动图文件</div>
+        <label>GIF FPS
+          <input id="fpsInput" type="number" min="1" max="60" value="12">
+        </label>
+        <label>GIF 最大帧数
+          <input id="maxFramesInput" type="number" min="2" value="300">
+        </label>
+        <label>在线展示速度 <strong id="speedValue">1.00x</strong>
+          <input id="speedInput" type="range" min="0.1" max="5" step="0.1" value="1">
+        </label>
+      </fieldset>
       <button id="runBtn" class="primary">运行规划</button>
       <div id="message" class="message">加载场景中...</div>
       <div class="links" id="outputLinks"></div>
@@ -283,25 +314,7 @@
       </section>
     </main>
     <aside class="param-panel">
-      <h2>参数调整</h2>
-      <fieldset>
-        <legend>场景与算法</legend>
-        <label>场景
-          <select id="scenarioSelect"></select>
-        </label>
-        <label>方法
-          <select id="methodSelect">
-            <option value="rolling_gbnn">rolling_gbnn</option>
-            <option value="gbnn_greedy">gbnn_greedy</option>
-          </select>
-        </label>
-        <label>最大步数
-          <input id="maxStepsInput" type="number" min="1" value="30000">
-        </label>
-        <label>目标覆盖率
-          <input id="targetInput" type="number" min="0.01" max="1" step="0.01" value="1">
-        </label>
-      </fieldset>
+      <h2>算法参数</h2>
       <fieldset>
         <legend>模块开关</legend>
         <div class="inline"><input id="noGbnnInput" type="checkbox">关闭 GBNN</div>
@@ -370,19 +383,6 @@
         </label>
         <label>Dijkstra 最大扩展
           <input id="dijkstraMaxInput" type="number" min="1" value="5000">
-        </label>
-      </fieldset>
-      <fieldset>
-        <legend>输出与播放</legend>
-        <div class="inline"><input id="saveAnimationInput" type="checkbox">同时保存 GIF/HTML 动图文件</div>
-        <label>GIF FPS
-          <input id="fpsInput" type="number" min="1" max="60" value="12">
-        </label>
-        <label>GIF 最大帧数
-          <input id="maxFramesInput" type="number" min="2" value="300">
-        </label>
-        <label>在线展示速度 <strong id="speedValue">1.00x</strong>
-          <input id="speedInput" type="range" min="0.1" max="5" step="0.1" value="1">
         </label>
       </fieldset>
     </aside>
