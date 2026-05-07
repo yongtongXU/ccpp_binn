@@ -97,34 +97,31 @@ class RollingOptimizer:
 
     def build_candidate_tree(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> list[BranchState]:
         horizon = int(self.config.get("horizon", 5))
-        beam_width = int(self.config.get("beam_width", 30))
-        tree_limit = int(self.config.get("record_tree_count", max(beam_width, self.config.get("record_candidate_count", beam_width))))
-        beam: list[list[Cell]] = [[]]
+        tree_limit = int(self.config.get("record_tree_count", self.config.get("record_candidate_count", 512)))
+        levels: list[list[BranchState]] = [[] for _ in range(horizon)]
         finished: list[BranchState] = []
-        levels: list[list[BranchState]] = []
-        for _ in range(horizon):
-            expanded: list[BranchState] = []
-            for branch in beam:
-                root = branch[-1] if branch else usv.current_cell
-                for n in cell_map.neighbors8(root):
-                    if not self._allowed_next(usv, cell_map, branch, n):
-                        continue
-                    new_branch = branch + [n]
-                    details = self.score_branch(usv, cell_map, gbnn_field, new_branch)
-                    expanded.append(BranchState(new_branch, float(details["branch_score"]), details))
-            if not expanded:
-                break
-            expanded.sort(key=lambda b: b.score, reverse=True)
-            levels.append(expanded[: max(1, tree_limit)])
-            beam = [b.branch for b in expanded[:beam_width]]
-            finished = expanded[:beam_width]
+
+        def dfs(branch: list[Cell]) -> None:
+            if len(branch) == horizon:
+                if branch:
+                    details = self.score_branch(usv, cell_map, gbnn_field, branch)
+                    finished.append(BranchState(branch.copy(), float(details["branch_score"]), details))
+                return
+            root = branch[-1] if branch else usv.current_cell
+            for n in cell_map.neighbors8(root):
+                new_branch = branch + [n]
+                details = self.score_branch(usv, cell_map, gbnn_field, new_branch)
+                levels[len(new_branch) - 1].append(BranchState(new_branch.copy(), float(details["branch_score"]), details))
+                dfs(new_branch)
+
+        dfs([])
+        finished.sort(key=lambda b: b.score, reverse=True)
+        for level in levels:
+            level.sort(key=lambda b: b.score, reverse=True)
         self._last_candidate_tree = _serialize_tree(levels, tree_limit)
         return finished
 
     def _allowed_next(self, usv: USV, cell_map: CellMap, branch: list[Cell], cell: Cell) -> bool:
-        max_repeat = int(self.config.get("max_repeat_in_branch", 3))
-        if branch.count(cell) >= max_repeat:
-            return False
         return True
 
     def score_branch(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField, branch: list[Cell]) -> dict:
