@@ -194,6 +194,7 @@ class CoveragePlanner:
                 "activity_score",
                 "direction_score",
                 "structure_score",
+                "branch_urgency_score",
                 "turn_penalty",
                 "repeat_penalty",
                 "dead_zone_penalty",
@@ -258,7 +259,7 @@ class CoveragePlanner:
             "selected_branch": ";".join(f"{x}:{y}" for x, y in branch),
             "candidate_branches": json.dumps(self._candidate_branches(decision), ensure_ascii=True),
             "candidate_tree": json.dumps(self._candidate_tree(decision), ensure_ascii=True),
-            **{k: details.get(k) for k in ["branch_score", "new_coverage_score", "activity_score", "direction_score", "structure_score", "turn_penalty", "repeat_penalty", "dead_zone_penalty", "obstacle_penalty"]},
+            **{k: details.get(k) for k in ["branch_score", "new_coverage_score", "activity_score", "direction_score", "structure_score", "branch_urgency_score", "turn_penalty", "repeat_penalty", "dead_zone_penalty", "obstacle_penalty"]},
         }
 
     def _candidate_branches(self, decision: StepDecision) -> list[dict]:

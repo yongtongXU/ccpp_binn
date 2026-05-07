@@ -1,4 +1,4 @@
-from src.core.cell_map import CellMap, OBSTACLE
+from src.core.cell_map import COVERED, CellMap, OBSTACLE, UNCOVERED
 from src.core.gbnn_field import GBNNField
 from src.core.rolling_optimizer import RollingOptimizer
 from src.core.usv import USV
@@ -69,3 +69,39 @@ def test_allows_limited_repeat_but_not_immediate_backtrack():
     nxt, _, _ = make_optimizer().select_next_cell(usv, cm, gbnn)
     assert nxt != (1, 1)
     assert nxt in cm.neighbors8((2, 1))
+
+
+def test_fork_prefers_one_entry_branch_that_would_need_backfill():
+    cm = CellMap(7, 5)
+    cm.grid[:, :] = OBSTACLE
+    cm.grid[2, 2] = COVERED
+    cm.visit_count[2, 2] = 1
+    cm.grid[2, 1] = UNCOVERED
+    cm.grid[2, 3] = UNCOVERED
+    cm.grid[2, 4] = UNCOVERED
+    cm.grid[2, 5] = UNCOVERED
+    cm.grid[1, 4] = COVERED
+    cm.visit_count[1, 4] = 1
+
+    usv = USV((2, 2))
+    gbnn = GBNNField({})
+    gbnn.initialize(cm)
+    opt = RollingOptimizer(
+        {
+            "horizon": 1,
+            "w_new_coverage": 1.0,
+            "w_activity": 0.0,
+            "w_direction": 0.0,
+            "w_structure": 0.0,
+            "w_branch_urgency": 100.0,
+            "w_strip_forward": 0.0,
+            "w_strip_reverse": 0.0,
+            "w_strip_cross": 0.0,
+            "w_turn": 0.0,
+            "w_dead_zone": 0.0,
+            "w_obstacle": 0.0,
+        }
+    )
+    nxt, _, details = opt.select_next_cell(usv, cm, gbnn)
+    assert nxt == (1, 2)
+    assert details["branch_urgency_score"] > 0

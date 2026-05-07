@@ -18,10 +18,12 @@ class RollingOptimizer:
     def __init__(self, config: dict | None = None):
         self.config = config or {}
         self._feature_cache: dict[Cell, dict] = {}
+        self._branch_urgency_cache: dict[tuple[Cell, Cell], float] = {}
         self._last_candidate_tree: dict = {"levels": []}
 
     def select_next_cell(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> tuple[Cell | None, list[Cell], dict]:
         self._feature_cache = {}
+        self._branch_urgency_cache = {}
         candidate_limit = int(self.config.get("record_candidate_count", 1_000_000))
         if self.config.get("enabled", True) is False:
             for n in cell_map.neighbors8(usv.current_cell):
@@ -149,6 +151,7 @@ class RollingOptimizer:
         current_has_any = self.current_strip_has_any_uncovered(usv, cell_map)
         direction_score = 0.0
         structure_score = 0.0
+        branch_urgency = 0.0
         for i, cell in enumerate(branch):
             if i == 0 and len(usv.path) >= 2 and cell == usv.path[-2]:
                 immediate_backtrack_penalty += 1.0
@@ -198,6 +201,8 @@ class RollingOptimizer:
             if branch.count(cell) > 1:
                 strip_loop_penalty += 2.0
             structure_score += features["structure"]
+            if i == 0:
+                branch_urgency += self._branch_urgency_score(usv.current_cell, cell, cell_map)
             dead_zone += features["dead_zone"]
             obstacle += features["obstacle"]
             prev = cell
@@ -206,6 +211,7 @@ class RollingOptimizer:
         activity_score = cfg.get("w_activity", 1.0) * activity / max(1, len(branch))
         direction_term = cfg.get("w_direction", 4.0) * direction_score / max(1, len(branch))
         structure_term = cfg.get("w_structure", 3.0) * structure_score / max(1, len(branch))
+        branch_urgency_score = cfg.get("w_branch_urgency", 12.0) * branch_urgency
         turn_penalty = cfg.get("w_turn", 3.0) * turns
         repeat_penalty = cfg.get("w_repeat", 2.0) * repeat
         dead_zone_penalty = cfg.get("w_dead_zone", 5.0) * dead_zone / max(1, len(branch))
@@ -222,6 +228,7 @@ class RollingOptimizer:
             + activity_score
             + direction_term
             + structure_term
+            + branch_urgency_score
             + strip_forward_score
             + strip_transition_score
             - turn_penalty
@@ -240,6 +247,7 @@ class RollingOptimizer:
             "activity_score": float(activity_score),
             "direction_score": float(direction_term),
             "structure_score": float(structure_term),
+            "branch_urgency_score": float(branch_urgency_score),
             "turn_penalty": float(turn_penalty),
             "repeat_penalty": float(repeat_penalty),
             "dead_zone_penalty": float(dead_zone_penalty),
@@ -365,6 +373,85 @@ class RollingOptimizer:
         }
         self._feature_cache[cell] = features
         return features
+
+    def _branch_urgency_score(self, current: Cell, first_cell: Cell, cell_map: CellMap) -> float:
+        if not cell_map.is_uncovered(first_cell):
+            return 0.0
+        key = (current, first_cell)
+        cached = self._branch_urgency_cache.get(key)
+        if cached is not None:
+            return cached
+
+        uncovered_neighbors = [n for n in cell_map.neighbors8(current) if cell_map.is_uncovered(n)]
+        if len(uncovered_neighbors) < 2:
+            self._branch_urgency_cache[key] = 0.0
+            return 0.0
+
+        component_ids: dict[Cell, int] = {}
+        components: list[set[Cell]] = []
+        for neighbor in uncovered_neighbors:
+            if neighbor in component_ids:
+                continue
+            component = self._uncovered_component(cell_map, neighbor)
+            component_id = len(components)
+            components.append(component)
+            for cell in component:
+                component_ids[cell] = component_id
+
+        first_component_id = component_ids.get(first_cell)
+        if first_component_id is None:
+            self._branch_urgency_cache[key] = 0.0
+            return 0.0
+        neighbor_component_count = len({component_ids[n] for n in uncovered_neighbors if n in component_ids})
+        if neighbor_component_count < 2:
+            self._branch_urgency_cache[key] = 0.0
+            return 0.0
+
+        component = components[first_component_id]
+        entrances = self._component_entrances(cell_map, component)
+        entrance_count = len(entrances)
+        if entrance_count > 1:
+            score = 0.0
+        else:
+            size_term = min(len(component), 30) / 30.0
+            cul_de_sac_term = self._cul_de_sac_ratio(cell_map, component)
+            score = 1.0 + 0.6 * size_term + 0.8 * cul_de_sac_term
+        self._branch_urgency_cache[key] = score
+        return score
+
+    def _uncovered_component(self, cell_map: CellMap, start: Cell) -> set[Cell]:
+        seen = {start}
+        stack = [start]
+        while stack:
+            cell = stack.pop()
+            for neighbor in cell_map.neighbors8(cell):
+                if neighbor not in seen and cell_map.is_uncovered(neighbor):
+                    seen.add(neighbor)
+                    stack.append(neighbor)
+        return seen
+
+    def _component_entrances(self, cell_map: CellMap, component: set[Cell]) -> set[Cell]:
+        entrances: set[Cell] = set()
+        for cell in component:
+            x, y = cell
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    neighbor = (x + dx, y + dy)
+                    if neighbor not in component and cell_map.is_traversable(neighbor) and not cell_map.is_uncovered(neighbor):
+                        entrances.add(neighbor)
+        return entrances
+
+    def _cul_de_sac_ratio(self, cell_map: CellMap, component: set[Cell]) -> float:
+        if not component:
+            return 0.0
+        terminal = 0
+        for cell in component:
+            uncovered_degree = sum(1 for neighbor in cell_map.neighbors8(cell) if neighbor in component)
+            if uncovered_degree <= 1:
+                terminal += 1
+        return terminal / len(component)
 
 
 def _heading_between(a: Cell, b: Cell) -> int | None:
