@@ -22,7 +22,7 @@ class RollingOptimizer:
 
     def select_next_cell(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> tuple[Cell | None, list[Cell], dict]:
         self._feature_cache = {}
-        candidate_limit = int(self.config.get("record_candidate_count", self.config.get("beam_width", 30)))
+        candidate_limit = int(self.config.get("record_candidate_count", 1_000_000))
         if self.config.get("enabled", True) is False:
             for n in cell_map.neighbors8(usv.current_cell):
                 if cell_map.is_uncovered(n):
@@ -97,7 +97,7 @@ class RollingOptimizer:
 
     def build_candidate_tree(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> list[BranchState]:
         horizon = int(self.config.get("horizon", 5))
-        tree_limit = int(self.config.get("record_tree_count", self.config.get("record_candidate_count", 512)))
+        tree_limit = int(self.config.get("record_tree_count", self.config.get("record_candidate_count", 1_000_000)))
         levels: list[list[BranchState]] = [[] for _ in range(horizon)]
         finished: list[BranchState] = []
 

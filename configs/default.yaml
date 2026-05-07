@@ -35,6 +35,8 @@ rolling_optimizer:
   enabled: true
   horizon: 3
   beam_width: 30
+  record_candidate_count: 1000000
+  record_tree_count: 1000000
   max_repeat_in_branch: 3
   allow_immediate_backtrack: false
   w_new_coverage: 8.0

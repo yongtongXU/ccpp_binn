@@ -275,7 +275,7 @@
           <input id="maxFramesInput" type="number" min="2" value="300">
         </label>
         <label>在线展示速度 <strong id="speedValue">1.00x</strong>
-          <input id="speedInput" type="range" min="0.1" max="5" step="0.1" value="1">
+          <input id="speedInput" type="range" min="0.1" max="20" step="0.1" value="1">
         </label>
       </fieldset>
       <button id="runBtn" class="primary">运行规划</button>
@@ -309,7 +309,7 @@
           <input id="stepSlider" type="range" min="0" max="0" value="0">
         </label>
         <label>速度
-          <input id="playSpeedInput" type="range" min="0.1" max="5" step="0.1" value="1">
+          <input id="playSpeedInput" type="range" min="0.1" max="20" step="0.1" value="1">
         </label>
       </section>
     </main>
@@ -330,7 +330,7 @@
           <input id="beamWidthInput" type="number" min="1" value="30">
         </label>
         <label>展示候选数
-          <input id="candidateCountInput" type="number" min="1" value="30">
+          <input id="candidateCountInput" type="number" min="1" value="1000000">
         </label>
         <label>分支最大重复
           <input id="maxRepeatInput" type="number" min="1" value="3">
@@ -479,6 +479,7 @@
           horizon: Number(el.horizon.value),
           beam_width: Number(el.beamWidth.value),
           record_candidate_count: Number(el.candidateCount.value),
+          record_tree_count: Number(el.candidateCount.value),
           max_repeat_in_branch: Number(el.maxRepeat.value),
           allow_immediate_backtrack: el.allowBacktrack.checked,
           w_new_coverage: Number(el.wNewCoverage.value),
@@ -582,7 +583,7 @@
       setInput(el.method, method.name);
       setInput(el.horizon, rolling.horizon);
       setInput(el.beamWidth, rolling.beam_width);
-      setInput(el.candidateCount, rolling.record_candidate_count || rolling.beam_width);
+      setInput(el.candidateCount, rolling.record_candidate_count || 1000000);
       setInput(el.maxRepeat, rolling.max_repeat_in_branch);
       el.allowBacktrack.checked = Boolean(rolling.allow_immediate_backtrack);
       setInput(el.wNewCoverage, rolling.w_new_coverage);

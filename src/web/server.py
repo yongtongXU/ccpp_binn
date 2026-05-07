@@ -298,6 +298,7 @@ def apply_web_overrides(cfg: dict[str, Any], payload: dict[str, Any]) -> None:
             "horizon": int,
             "beam_width": int,
             "record_candidate_count": int,
+            "record_tree_count": int,
             "max_repeat_in_branch": int,
             "w_new_coverage": float,
             "w_activity": float,
