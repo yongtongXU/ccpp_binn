@@ -28,14 +28,28 @@
     }
     .app {
       display: grid;
-      grid-template-columns: 340px minmax(0, 1fr);
+      grid-template-columns: 240px minmax(0, 1fr) 360px;
       min-height: 100vh;
     }
     aside {
       background: var(--panel);
-      border-right: 1px solid var(--line);
       padding: 16px;
       overflow: auto;
+    }
+    .control-panel {
+      border-right: 1px solid var(--line);
+    }
+    .param-panel {
+      border-left: 1px solid var(--line);
+      display: grid;
+      align-content: start;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .param-panel h2 {
+      grid-column: 1 / -1;
+      font-size: 18px;
+      margin: 0;
     }
     main {
       display: grid;
@@ -51,8 +65,11 @@
     fieldset {
       border: 1px solid var(--line);
       border-radius: 8px;
-      margin: 0 0 12px;
+      margin: 0;
       padding: 12px;
+    }
+    .control-panel fieldset {
+      margin-bottom: 12px;
     }
     legend {
       color: var(--muted);
@@ -205,9 +222,14 @@
       .app {
         grid-template-columns: 1fr;
       }
-      aside {
+      .control-panel,
+      .param-panel {
         border-right: none;
+        border-left: none;
         border-bottom: 1px solid var(--line);
+      }
+      .param-panel {
+        grid-template-columns: 1fr;
       }
       .status {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -223,8 +245,45 @@
 </head>
 <body>
   <div class="app">
-    <aside>
+    <aside class="control-panel">
       <h1>路径规划控制台</h1>
+      <button id="runBtn" class="primary">运行规划</button>
+      <div id="message" class="message">加载场景中...</div>
+      <div class="links" id="outputLinks"></div>
+      <div class="legend">
+        <div><span class="swatch"></span>已执行普通路径</div>
+        <div><span class="swatch backtrack"></span>回溯逃逸</div>
+        <div><span class="swatch dijkstra"></span>Dijkstra 逃逸</div>
+        <div><span class="swatch candidate"></span>当前候选路径</div>
+        <div><span class="swatch selected"></span>当前选中路径</div>
+      </div>
+    </aside>
+    <main>
+      <section class="stage">
+        <canvas id="canvas"></canvas>
+      </section>
+      <section class="status">
+        <div class="metric"><span>Step</span><strong id="stepText">-</strong></div>
+        <div class="metric"><span>Coverage</span><strong id="coverageText">-</strong></div>
+        <div class="metric"><span>Mode</span><strong id="modeText">-</strong></div>
+        <div class="metric"><span>Selected</span><strong id="selectedText">-</strong></div>
+        <div class="metric"><span>Score</span><strong id="scoreText">-</strong></div>
+        <div class="metric"><span>Candidates</span><strong id="candidateText">-</strong></div>
+      </section>
+      <section class="playbar">
+        <button id="prevBtn">上一步</button>
+        <button id="playBtn">暂停</button>
+        <button id="nextBtn">下一步</button>
+        <label>进度
+          <input id="stepSlider" type="range" min="0" max="0" value="0">
+        </label>
+        <label>速度
+          <input id="playSpeedInput" type="range" min="0.1" max="5" step="0.1" value="1">
+        </label>
+      </section>
+    </main>
+    <aside class="param-panel">
+      <h2>参数调整</h2>
       <fieldset>
         <legend>场景与算法</legend>
         <label>场景
@@ -291,6 +350,9 @@
         <label>障碍惩罚
           <input id="wObstacleInput" type="number" step="0.1" value="1.5">
         </label>
+        <label>立即回退惩罚
+          <input id="wImmediateBacktrackInput" type="number" step="1" value="1000">
+        </label>
       </fieldset>
       <fieldset>
         <legend>GBNN / Escape</legend>
@@ -323,41 +385,7 @@
           <input id="speedInput" type="range" min="0.1" max="5" step="0.1" value="1">
         </label>
       </fieldset>
-      <button id="runBtn" class="primary">运行规划</button>
-      <div id="message" class="message">加载场景中...</div>
-      <div class="links" id="outputLinks"></div>
-      <div class="legend">
-        <div><span class="swatch"></span>已执行普通路径</div>
-        <div><span class="swatch backtrack"></span>回溯逃逸</div>
-        <div><span class="swatch dijkstra"></span>Dijkstra 逃逸</div>
-        <div><span class="swatch candidate"></span>当前候选路径</div>
-        <div><span class="swatch selected"></span>当前选中路径</div>
-      </div>
     </aside>
-    <main>
-      <section class="stage">
-        <canvas id="canvas"></canvas>
-      </section>
-      <section class="status">
-        <div class="metric"><span>Step</span><strong id="stepText">-</strong></div>
-        <div class="metric"><span>Coverage</span><strong id="coverageText">-</strong></div>
-        <div class="metric"><span>Mode</span><strong id="modeText">-</strong></div>
-        <div class="metric"><span>Selected</span><strong id="selectedText">-</strong></div>
-        <div class="metric"><span>Score</span><strong id="scoreText">-</strong></div>
-        <div class="metric"><span>Candidates</span><strong id="candidateText">-</strong></div>
-      </section>
-      <section class="playbar">
-        <button id="prevBtn">上一步</button>
-        <button id="playBtn">暂停</button>
-        <button id="nextBtn">下一步</button>
-        <label>进度
-          <input id="stepSlider" type="range" min="0" max="0" value="0">
-        </label>
-        <label>速度
-          <input id="playSpeedInput" type="range" min="0.1" max="5" step="0.1" value="1">
-        </label>
-      </section>
-    </main>
   </div>
   <script>
     const state = {
@@ -391,6 +419,7 @@
       wRepeat: document.getElementById("wRepeatInput"),
       wDeadZone: document.getElementById("wDeadZoneInput"),
       wObstacle: document.getElementById("wObstacleInput"),
+      wImmediateBacktrack: document.getElementById("wImmediateBacktrackInput"),
       gbnnIterations: document.getElementById("gbnnIterationsInput"),
       neighborWeight: document.getElementById("neighborWeightInput"),
       transferBeta: document.getElementById("transferBetaInput"),
@@ -460,6 +489,7 @@
           w_repeat: Number(el.wRepeat.value),
           w_dead_zone: Number(el.wDeadZone.value),
           w_obstacle: Number(el.wObstacle.value),
+          w_immediate_backtrack: Number(el.wImmediateBacktrack.value),
           iterations_per_step: Number(el.gbnnIterations.value),
           neighbor_weight: Number(el.neighborWeight.value),
           transfer_beta: Number(el.transferBeta.value),
@@ -563,6 +593,7 @@
       setInput(el.wRepeat, rolling.w_repeat);
       setInput(el.wDeadZone, rolling.w_dead_zone);
       setInput(el.wObstacle, rolling.w_obstacle);
+      setInput(el.wImmediateBacktrack, rolling.w_immediate_backtrack);
       setInput(el.gbnnIterations, gbnn.iterations_per_step);
       setInput(el.neighborWeight, gbnn.neighbor_weight);
       setInput(el.transferBeta, gbnn.transfer_beta);

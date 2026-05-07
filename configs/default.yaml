@@ -45,6 +45,7 @@ rolling_optimizer:
   w_dead_zone: 5.0
   w_obstacle: 1.5
   w_structure: 3.0
+  w_immediate_backtrack: 1000.0
 
 escape:
   enabled: true

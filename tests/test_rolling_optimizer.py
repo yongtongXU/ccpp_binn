@@ -20,6 +20,18 @@ def test_open_map_prefers_new_coverage_neighbor():
     assert branch
 
 
+def test_candidate_tree_expands_all_eight_directions_per_step():
+    cm = CellMap(5, 5)
+    usv = USV((2, 2))
+    cm.mark_covered((2, 2))
+    gbnn = GBNNField({})
+    gbnn.initialize(cm)
+    opt = RollingOptimizer({"horizon": 1, "beam_width": 8, "record_candidate_count": 8})
+    _, _, details = opt.select_next_cell(usv, cm, gbnn)
+    first_steps = {tuple(candidate["path"][0]) for candidate in details["candidate_branches"]}
+    assert first_steps == set(cm.neighbors8((2, 2)))
+
+
 def test_avoids_obstacle_and_next_is_neighbor():
     cm = CellMap(5, 5)
     cm.grid[2, 3] = OBSTACLE

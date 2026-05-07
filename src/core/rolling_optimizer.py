@@ -115,11 +115,6 @@ class RollingOptimizer:
         max_repeat = int(self.config.get("max_repeat_in_branch", 3))
         if branch.count(cell) >= max_repeat:
             return False
-        if not self.config.get("allow_immediate_backtrack", False):
-            if not branch and len(usv.path) >= 2 and cell == usv.path[-2]:
-                return False
-            if len(branch) >= 2 and cell == branch[-2]:
-                return False
         return True
 
     def score_branch(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField, branch: list[Cell]) -> dict:
@@ -137,6 +132,7 @@ class RollingOptimizer:
         strip_reverse_penalty = 0.0
         strip_cross_penalty = 0.0
         strip_loop_penalty = 0.0
+        immediate_backtrack_penalty = 0.0
         prev = usv.current_cell
         prev_heading = usv.heading
         current_strip = usv.current_strip_id if usv.current_strip_id is not None else usv.current_cell[1]
@@ -147,6 +143,10 @@ class RollingOptimizer:
         direction_score = 0.0
         structure_score = 0.0
         for i, cell in enumerate(branch):
+            if i == 0 and len(usv.path) >= 2 and cell == usv.path[-2]:
+                immediate_backtrack_penalty += 1.0
+            elif i >= 2 and cell == branch[i - 2]:
+                immediate_backtrack_penalty += 1.0
             features = self._cell_features(cell_map, gbnn_field, cell)
             strip_delta = cell[1] - current_strip
             abs_strip_delta = abs(strip_delta)
@@ -209,6 +209,7 @@ class RollingOptimizer:
         strip_reverse_term = cfg.get("w_strip_reverse", 25.0) * strip_reverse_penalty
         strip_cross_term = cfg.get("w_strip_cross", 35.0) * strip_cross_penalty
         strip_loop_term = cfg.get("w_strip_loop", 20.0) * strip_loop_penalty
+        immediate_backtrack_term = cfg.get("w_immediate_backtrack", 1000.0) * immediate_backtrack_penalty
         score = (
             new_coverage_score
             + activity_score
@@ -224,6 +225,7 @@ class RollingOptimizer:
             - strip_reverse_term
             - strip_cross_term
             - strip_loop_term
+            - immediate_backtrack_term
         )
         return {
             "branch_score": float(score),
@@ -240,6 +242,7 @@ class RollingOptimizer:
             "strip_reverse_penalty": float(strip_reverse_term),
             "strip_cross_penalty": float(strip_cross_term),
             "strip_loop_penalty": float(strip_loop_term),
+            "immediate_backtrack_penalty": float(immediate_backtrack_term),
         }
 
     def current_strip_has_forward_uncovered(self, usv: USV, cell_map: CellMap) -> bool:
