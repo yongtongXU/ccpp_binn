@@ -37,6 +37,8 @@ def apply_cli_overrides(config: dict[str, Any], args: Any) -> dict[str, Any]:
         config.setdefault("output", {})["root"] = args.output
     if getattr(args, "max_steps", None):
         config.setdefault("planner", {})["max_steps"] = args.max_steps
+    if getattr(args, "method", None):
+        config.setdefault("method", {})["name"] = args.method
     if getattr(args, "no_gbnn", False):
         config.setdefault("gbnn", {})["enabled"] = False
     if getattr(args, "no_rolling", False):

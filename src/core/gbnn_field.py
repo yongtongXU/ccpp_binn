@@ -31,11 +31,11 @@ class GBNNField:
             self.activity = self._external_input(cell_map)
             return
         iterations = int(cfg.get("iterations_per_step", 1))
-        decay = float(cfg.get("activity_decay", 0.8))
         neighbor_weight = float(cfg.get("neighbor_weight", 0.2))
         external = self._external_input(cell_map)
         for _ in range(max(1, iterations)):
             spread = np.zeros_like(self.activity)
+            positive_activity = np.maximum(self.activity, 0.0)
             for dy in (-1, 0, 1):
                 for dx in (-1, 0, 1):
                     if dx == 0 and dy == 0:
@@ -45,10 +45,22 @@ class GBNNField:
                     xs = slice(max(0, dx), cell_map.width + min(0, dx))
                     tys = slice(max(0, -dy), cell_map.height + min(0, -dy))
                     txs = slice(max(0, -dx), cell_map.width + min(0, -dx))
-                    shifted[ys, xs] = self.activity[tys, txs]
+                    shifted[ys, xs] = positive_activity[tys, txs]
                     spread += shifted
-            self.activity = decay * self.activity + neighbor_weight * spread / 8.0 + external
-            self.activity[cell_map.grid == OBSTACLE] = float(cfg.get("obstacle_inhibition", -2.0))
+            raw = external + neighbor_weight * spread / 8.0
+            self.activity = self._transfer(raw)
+            self.activity[cell_map.grid == OBSTACLE] = float(cfg.get("activity_min", -1.0))
+
+    def _transfer(self, raw: np.ndarray) -> np.ndarray:
+        beta = float(self.config.get("transfer_beta", 0.6))
+        lower = float(self.config.get("activity_min", -1.0))
+        upper = float(self.config.get("activity_max", 1.0))
+        activity = np.empty_like(raw, dtype=float)
+        activity[raw < 0.0] = lower
+        middle = (raw >= 0.0) & (raw < 1.0)
+        activity[middle] = beta * raw[middle]
+        activity[raw >= 1.0] = upper
+        return np.clip(activity, lower, upper)
 
     def get_activity(self, cell: Cell) -> float:
         if self.activity is None:

@@ -15,6 +15,11 @@ planner:
   stagnation_steps: 20
   min_coverage_increment: 0.0001
 
+method:
+  name: rolling_gbnn
+  heading_weight: 0.5
+  uncovered_bonus: 0.25
+
 gbnn:
   enabled: true
   iterations_per_step: 1
@@ -22,7 +27,9 @@ gbnn:
   obstacle_inhibition: -2.0
   covered_input: 0.0
   neighbor_weight: 0.2
-  activity_decay: 0.8
+  transfer_beta: 0.6
+  activity_min: -1.0
+  activity_max: 1.0
 
 rolling_optimizer:
   enabled: true

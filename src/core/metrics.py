@@ -5,6 +5,7 @@ from src.core.usv import USV
 
 SUMMARY_COLUMNS = [
     "scenario",
+    "method",
     "success",
     "coverage_rate",
     "repeated_coverage_rate",
@@ -42,12 +43,14 @@ def compute_metrics(
     deadlock_count: int,
     escape_records: list[dict],
     failure_reason: str = "",
+    method: str = "",
 ) -> dict:
     escape_lengths = [int(e.get("path_length", 0)) for e in escape_records]
     normal_steps = sum(1 for m in usv.mode_history[1:] if m == "normal")
     escape_steps = sum(1 for m in usv.mode_history[1:] if m == "escape")
     return {
         "scenario": scenario,
+        "method": method,
         "success": bool(success),
         "coverage_rate": cell_map.coverage_rate(),
         "repeated_coverage_rate": cell_map.repeated_coverage_rate(),

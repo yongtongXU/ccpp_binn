@@ -4,6 +4,9 @@ from pathlib import Path
 import os
 
 os.environ.setdefault("MPLCONFIGDIR", "/private/tmp/sbinn_matplotlib")
+import matplotlib
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import ListedColormap

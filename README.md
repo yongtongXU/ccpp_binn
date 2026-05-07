@@ -11,6 +11,15 @@
 - A* / Dijkstra 只作为连接到逃逸点的图搜索工具。
 - 当前仅支持单艇、静态障碍、8 邻域运动。
 
+## 方法入口
+
+仿真入口通过 `method.name` 选择覆盖策略，便于后续加入其他方法做对比实验：
+
+- `rolling_gbnn`：本文方法，使用 GBNN 覆盖需求场、滚动候选分支评价和逃逸点选择。
+- `gbnn_greedy`：传统单步 GBNN 基线，在当前位置 8 邻域内按神经元活性和航向连续性选点。
+
+新增方法时，在 `src/core/strategy.py` 中实现同样的 `choose_next()` / `after_step()` 接口，并注册到 `create_strategy()` 的 registry 中即可复用同一套场景、指标和输出文件。
+
 ## 环境
 
 ```bash
@@ -41,6 +50,8 @@ python main.py --all
 
 ```bash
 python main.py --all --output outputs/test_run --max-steps 10000
+python main.py --scenario configs/scenarios/open_water.yaml --method rolling_gbnn
+python main.py --scenario configs/scenarios/open_water.yaml --method gbnn_greedy
 python main.py --scenario configs/scenarios/open_water.yaml --no-gbnn
 python main.py --scenario configs/scenarios/open_water.yaml --no-rolling
 python main.py --scenario configs/scenarios/open_water.yaml --no-escape

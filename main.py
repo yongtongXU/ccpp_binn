@@ -29,6 +29,7 @@ def main() -> None:
     parser.add_argument("--all", action="store_true", help="Run all fixed scenarios")
     parser.add_argument("--output", help="Output root")
     parser.add_argument("--max-steps", type=int, help="Override max steps")
+    parser.add_argument("--method", choices=["rolling_gbnn", "gbnn_greedy"], help="Coverage method for comparison runs")
     parser.add_argument("--no-gbnn", action="store_true")
     parser.add_argument("--no-rolling", action="store_true")
     parser.add_argument("--no-escape", action="store_true")
