@@ -3,6 +3,9 @@ outputs/*
 !outputs/
 !outputs/.gitkeep
 
+# Reference materials
+text/refer/
+
 # macOS
 .DS_Store
 ._*
