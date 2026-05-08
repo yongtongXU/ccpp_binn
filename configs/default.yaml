@@ -56,11 +56,13 @@ rolling_optimizer:
   missed_branch_full_behind: 18
   w_immediate_backtrack: 1000.0
   w_topology_zigzag: 30.0
+  w_lateral_detour: 60.0
   topology_component_limit: 256
   topology_open_component_min: 18
   topology_open_run_min: 8
   topology_pocket_component_max: 10
   topology_full_return_cost: 18.0
+  topology_detour_pocket_threshold: 0.55
 
 escape:
   enabled: true

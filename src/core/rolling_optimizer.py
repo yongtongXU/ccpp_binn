@@ -219,6 +219,7 @@ class RollingOptimizer:
         strip_loop_penalty = 0.0
         immediate_backtrack_penalty = 0.0
         topology_zigzag_penalty = 0.0
+        lateral_detour_penalty = 0.0
         missed_branch = 0.0
         topology: LocalTopology | None = None
         prev = usv.current_cell
@@ -262,6 +263,8 @@ class RollingOptimizer:
                         strip_cross_penalty += 3.0
                     if i == 0 and topology is not None and topology.terrain_type == "open_strip":
                         topology_zigzag_penalty += topology.open_strip_score
+                    if i == 0 and (topology is None or topology.pocket_score < float(cfg.get("topology_detour_pocket_threshold", 0.55))):
+                        lateral_detour_penalty += 1.0 + (0.5 if dx != 0 else 0.0)
                 else:
                     strip_transition += 1.0
                     if features["uncovered"]:
@@ -317,6 +320,7 @@ class RollingOptimizer:
         strip_loop_term = cfg.get("w_strip_loop", 20.0) * strip_loop_penalty
         immediate_backtrack_term = cfg.get("w_immediate_backtrack", 1000.0) * immediate_backtrack_penalty
         topology_zigzag_term = cfg.get("w_topology_zigzag", 30.0) * topology_zigzag_penalty
+        lateral_detour_term = cfg.get("w_lateral_detour", 60.0) * lateral_detour_penalty
         score = (
             new_coverage_score
             + activity_score
@@ -336,6 +340,7 @@ class RollingOptimizer:
             - strip_loop_term
             - immediate_backtrack_term
             - topology_zigzag_term
+            - lateral_detour_term
         )
         return {
             "branch_score": float(score),
@@ -356,6 +361,8 @@ class RollingOptimizer:
             "strip_loop_penalty": float(strip_loop_term),
             "immediate_backtrack_penalty": float(immediate_backtrack_term),
             "topology_zigzag_penalty": float(topology_zigzag_term),
+            "lateral_detour_penalty": float(lateral_detour_term),
+            "topology_terrain_type": topology.terrain_type if topology is not None else "none",
             "topology_component_size": float(topology.component_size if topology is not None else 0),
             "topology_return_cost": float(topology.return_cost if topology is not None else 0.0),
         }

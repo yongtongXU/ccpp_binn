@@ -200,6 +200,11 @@ class CoveragePlanner:
                 "repeat_penalty",
                 "dead_zone_penalty",
                 "obstacle_penalty",
+                "topology_terrain_type",
+                "topology_component_size",
+                "topology_return_cost",
+                "topology_zigzag_penalty",
+                "lateral_detour_penalty",
                 "selected_branch",
                 "candidate_branches",
                 "candidate_tree",
@@ -260,7 +265,27 @@ class CoveragePlanner:
             "selected_branch": ";".join(f"{x}:{y}" for x, y in branch),
             "candidate_branches": json.dumps(self._candidate_branches(decision), ensure_ascii=True),
             "candidate_tree": json.dumps(self._candidate_tree(decision), ensure_ascii=True),
-            **{k: details.get(k) for k in ["branch_score", "new_coverage_score", "activity_score", "direction_score", "structure_score", "branch_urgency_score", "missed_branch_score", "turn_penalty", "repeat_penalty", "dead_zone_penalty", "obstacle_penalty"]},
+            **{
+                k: details.get(k)
+                for k in [
+                    "branch_score",
+                    "new_coverage_score",
+                    "activity_score",
+                    "direction_score",
+                    "structure_score",
+                    "branch_urgency_score",
+                    "missed_branch_score",
+                    "turn_penalty",
+                    "repeat_penalty",
+                    "dead_zone_penalty",
+                    "obstacle_penalty",
+                    "topology_terrain_type",
+                    "topology_component_size",
+                    "topology_return_cost",
+                    "topology_zigzag_penalty",
+                    "lateral_detour_penalty",
+                ]
+            },
         }
 
     def _candidate_branches(self, decision: StepDecision) -> list[dict]:

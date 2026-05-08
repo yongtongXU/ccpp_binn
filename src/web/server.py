@@ -110,6 +110,8 @@ class PlannerWebHandler(SimpleHTTPRequestHandler):
             delay_ms = max(0, int(payload.get("stream_delay_ms") or 0))
             control = RunControl()
             RUN_CONTROLS[run_id] = control
+            started = time.perf_counter()
+            log_run_start("api/run-stream", planner, cfg, output_root, payload)
         except Exception as exc:  # noqa: BLE001
             self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -137,6 +139,7 @@ class PlannerWebHandler(SimpleHTTPRequestHandler):
                     event["decisionRow"] = normalize_decisions([event["decisionRow"]])[0]
                 elif event["type"] == "done":
                     event["outputs"] = output_links(output_root / planner.scenario)
+                    log_run_done("api/run-stream", planner, event["metrics"], output_root, time.perf_counter() - started)
                 self._write_json_line(event)
                 if event["type"] == "done":
                     break
@@ -251,7 +254,10 @@ def run_planner(payload: dict[str, Any]) -> dict[str, Any]:
 
     planner = CoveragePlanner(cfg)
     output_root = Path(cfg.get("output", {}).get("root", DEFAULT_OUTPUT_ROOT))
+    started = time.perf_counter()
+    log_run_start("api/run", planner, cfg, output_root, payload)
     metrics = planner.run(output_root)
+    log_run_done("api/run", planner, metrics, output_root, time.perf_counter() - started)
     output_dir = output_root / planner.scenario
     return {
         "scenario": planner.scenario,
@@ -263,6 +269,79 @@ def run_planner(payload: dict[str, Any]) -> dict[str, Any]:
         "decisionRows": normalize_decisions(planner.decision_rows),
         "activity": activity_grid(planner),
         "outputs": output_links(output_dir),
+    }
+
+
+def log_run_start(source: str, planner: CoveragePlanner, cfg: dict[str, Any], output_root: Path, payload: dict[str, Any]) -> None:
+    rolling = cfg.get("rolling_optimizer", {})
+    gbnn = cfg.get("gbnn", {})
+    escape = cfg.get("escape", {})
+    planner_cfg = cfg.get("planner", {})
+    print(
+        "[planner:start] "
+        f"source={source} scenario={planner.scenario} method={planner.strategy.name} "
+        f"map={planner.cell_map.width}x{planner.cell_map.height} max_steps={planner_cfg.get('max_steps')} "
+        f"output={output_root}",
+        flush=True,
+    )
+    print(
+        "[planner:config] "
+        f"gbnn={gbnn.get('enabled', True)} rolling={rolling.get('enabled', True)} escape={escape.get('enabled', True)} "
+        f"global_strip={rolling.get('use_global_strip_plan', True)} priority_strip={rolling.get('use_priority_strip', True)} "
+        f"horizon={rolling.get('horizon')} beam={rolling.get('beam_width')} "
+        f"candidates={rolling.get('record_candidate_count')} tree={rolling.get('record_tree_count')} "
+        f"escape_method={escape.get('method')} save_outputs={payload.get('save_outputs', True)} "
+        f"animation={cfg.get('output', {}).get('animation', {}).get('enabled', False)}",
+        flush=True,
+    )
+
+
+def log_run_done(source: str, planner: CoveragePlanner, metrics: dict[str, Any], output_root: Path, elapsed: float) -> None:
+    diagnostics = path_diagnostics(planner.path_rows)
+    print(
+        "[planner:done] "
+        f"source={source} scenario={planner.scenario} success={metrics.get('success')} "
+        f"coverage={float(metrics.get('coverage_rate', 0.0)):.4f} steps={metrics.get('total_steps')} "
+        f"turns={metrics.get('number_of_turns')} escapes={metrics.get('escape_steps')} "
+        f"deadlocks={metrics.get('deadlock_count')} elapsed={elapsed:.2f}s "
+        f"failure={metrics.get('failure_reason') or 'none'}",
+        flush=True,
+    )
+    print(
+        "[planner:path] "
+        f"diagonal_steps={diagnostics['diagonal_steps']} turn_rate={diagnostics['turn_rate']:.3f} "
+        f"short_runs={diagnostics['short_runs']} avg_run={diagnostics['avg_run']:.2f}",
+        flush=True,
+    )
+    print(f"[planner:output] {output_root / planner.scenario}", flush=True)
+
+
+def path_diagnostics(path_rows: list[dict[str, Any]]) -> dict[str, float | int]:
+    if len(path_rows) < 2:
+        return {"diagonal_steps": 0, "turn_rate": 0.0, "short_runs": 0, "avg_run": 0.0}
+    dirs = []
+    for prev, row in zip(path_rows, path_rows[1:]):
+        dx = (int(row["x"]) > int(prev["x"])) - (int(row["x"]) < int(prev["x"]))
+        dy = (int(row["y"]) > int(prev["y"])) - (int(row["y"]) < int(prev["y"]))
+        dirs.append((dx, dy, str(row.get("mode", "normal")), str(row.get("escape_type", "none"))))
+    turns = sum(1 for a, b in zip(dirs, dirs[1:]) if a[:2] != b[:2])
+    diagonal = sum(1 for dx, dy, *_ in dirs if dx and dy)
+    runs = []
+    current = dirs[0]
+    length = 1
+    for direction in dirs[1:]:
+        if direction == current:
+            length += 1
+        else:
+            runs.append(length)
+            current = direction
+            length = 1
+    runs.append(length)
+    return {
+        "diagonal_steps": diagonal,
+        "turn_rate": turns / max(1, len(dirs)),
+        "short_runs": sum(1 for run in runs if run <= 2),
+        "avg_run": sum(runs) / max(1, len(runs)),
     }
 
 
