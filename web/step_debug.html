@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>15x15 单步调试台</title>
+  <style>
+    :root {
+      font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #18212f;
+      background: #edf1f5;
+      --panel: #fff;
+      --line: #d4dce6;
+      --muted: #66758a;
+      --blue: #1769aa;
+      --red: #d62728;
+      --green: #2ca02c;
+      --orange: #ff7f0e;
+      --purple: #7b61ff;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; }
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(560px, 1fr) 440px;
+      gap: 12px;
+      padding: 12px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      min-width: 0;
+    }
+    .left {
+      display: grid;
+      grid-template-rows: auto minmax(420px, 1fr) auto;
+      gap: 12px;
+    }
+    .right {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+      max-height: calc(100vh - 24px);
+      overflow: auto;
+    }
+    h1, h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+    h2 { font-size: 14px; }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px;
+      background: #f8fafc;
+      min-width: 0;
+    }
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .metric strong {
+      display: block;
+      font-size: 14px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .stage {
+      position: relative;
+      min-height: 480px;
+      overflow: hidden;
+      padding: 0;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 480px;
+      background: #fff;
+    }
+    .legend {
+      display: grid;
+      grid-template-columns: repeat(6, auto);
+      justify-content: start;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .swatch {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 1px solid #aab4c0;
+      vertical-align: -3px;
+      margin-right: 5px;
+    }
+    label {
+      display: grid;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 9px;
+    }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid #c9d2dc;
+      border-radius: 6px;
+      background: #fff;
+      color: #18212f;
+      font-size: 13px;
+    }
+    input, select { height: 34px; padding: 0 9px; }
+    textarea {
+      min-height: 160px;
+      padding: 9px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      resize: vertical;
+    }
+    .buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    button {
+      height: 36px;
+      border: 1px solid #bfc9d4;
+      border-radius: 6px;
+      background: #f8fafc;
+      color: #17202a;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    button.primary {
+      background: var(--blue);
+      border-color: var(--blue);
+      color: #fff;
+      font-weight: 600;
+    }
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+      margin: 8px 0 0;
+    }
+    .list {
+      display: grid;
+      gap: 6px;
+      max-height: 210px;
+      overflow: auto;
+      font-size: 12px;
+    }
+    .item {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 7px;
+      background: #fbfcfe;
+      cursor: pointer;
+    }
+    .item:hover { border-color: var(--blue); }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 260px;
+      overflow: auto;
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px;
+    }
+    .status {
+      min-height: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    @media (max-width: 1000px) {
+      .app { grid-template-columns: 1fr; }
+      .right { max-height: none; }
+      .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="left">
+      <div class="panel">
+        <h1>15x15 四障碍单步调试台</h1>
+        <p class="hint">每次点击“执行一步”只推进一个元胞。可以强制模式、手动填下一步坐标，或直接修改模式权重 JSON 后再执行。</p>
+      </div>
+      <div class="panel stage">
+        <canvas id="mapCanvas"></canvas>
+      </div>
+      <div class="panel legend">
+        <span><i class="swatch" style="background:#ffffff"></i>未覆盖</span>
+        <span><i class="swatch" style="background:#77c879"></i>已覆盖</span>
+        <span><i class="swatch" style="background:#222"></i>障碍</span>
+        <span><i class="swatch" style="background:#d62728"></i>当前位置</span>
+        <span><i class="swatch" style="background:#7b61ff"></i>候选</span>
+        <span><i class="swatch" style="background:#ff7f0e"></i>建议/手动</span>
+      </div>
+    </section>
+    <aside class="right">
+      <div class="panel metrics" id="metrics"></div>
+      <div class="panel">
+        <h2>单步控制</h2>
+        <label>强制规划模式
+          <select id="forcedMode"></select>
+        </label>
+        <label>手动下一步坐标，可留空使用算法建议
+          <input id="manualNext" placeholder="例如 1,0">
+        </label>
+        <div class="buttons">
+          <button class="primary" id="stepBtn">执行一步</button>
+          <button id="resetBtn">重置</button>
+        </div>
+        <p class="hint">点击邻居列表或地图上的相邻可通行格，会自动填入手动下一步。</p>
+        <div class="status" id="status"></div>
+      </div>
+      <div class="panel">
+        <h2>当前局部状态</h2>
+        <div class="mono" id="planningState"></div>
+      </div>
+      <div class="panel">
+        <h2>可走邻居</h2>
+        <div class="list" id="neighbors"></div>
+      </div>
+      <div class="panel">
+        <h2>最近候选分支</h2>
+        <div class="list" id="candidates"></div>
+      </div>
+      <div class="panel">
+        <h2>模式权重 JSON</h2>
+        <textarea id="weights"></textarea>
+      </div>
+      <div class="panel">
+        <h2>最近决策详情</h2>
+        <div class="mono" id="decision"></div>
+      </div>
+    </aside>
+  </div>
+  <script>
+    const el = {
+      canvas: document.getElementById("mapCanvas"),
+      metrics: document.getElementById("metrics"),
+      forcedMode: document.getElementById("forcedMode"),
+      manualNext: document.getElementById("manualNext"),
+      stepBtn: document.getElementById("stepBtn"),
+      resetBtn: document.getElementById("resetBtn"),
+      status: document.getElementById("status"),
+      planningState: document.getElementById("planningState"),
+      neighbors: document.getElementById("neighbors"),
+      candidates: document.getElementById("candidates"),
+      weights: document.getElementById("weights"),
+      decision: document.getElementById("decision"),
+    };
+    const state = { data: null, cell: 0, offsetX: 0, offsetY: 0 };
+
+    async function api(path, body) {
+      const options = body ? {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      } : {};
+      const res = await fetch(path, options);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      return data;
+    }
+
+    async function loadState() {
+      setData(await api("/api/state"));
+    }
+
+    function setData(data) {
+      state.data = data;
+      if (!el.forcedMode.options.length) {
+        for (const mode of data.planning_modes) {
+          const option = document.createElement("option");
+          option.value = mode;
+          option.textContent = mode;
+          el.forcedMode.appendChild(option);
+        }
+      }
+      if (!el.weights.value.trim()) {
+        el.weights.value = JSON.stringify(data.mode_weights, null, 2);
+      }
+      renderMetrics();
+      renderPlanningState();
+      renderNeighbors();
+      renderCandidates();
+      renderDecision();
+      draw();
+      el.status.textContent = data.finished ? "已完成全覆盖。" : `事件：${data.event}`;
+    }
+
+    function renderMetrics() {
+      const data = state.data;
+      const metrics = [
+        ["step", data.step],
+        ["current", `(${data.current[0]}, ${data.current[1]})`],
+        ["mode", data.planning_state.mode],
+        ["coverage", percent(data.coverage_rate)],
+        ["repeat", percent(data.repeated_coverage_rate)],
+        ["turns", data.metrics.number_of_turns],
+      ];
+      el.metrics.innerHTML = metrics.map(([k, v]) => `<div class="metric"><span>${k}</span><strong>${v}</strong></div>`).join("");
+    }
+
+    function renderPlanningState() {
+      el.planningState.textContent = JSON.stringify(state.data.planning_state, null, 2);
+    }
+
+    function renderNeighbors() {
+      el.neighbors.innerHTML = state.data.neighbors.map((n) => {
+        const cell = n.cell.join(",");
+        return `<div class="item" data-cell="${cell}">(${cell}) state=${n.state} visit=${n.visit_count} activity=${n.activity.toFixed(3)} uncovered=${n.uncovered}</div>`;
+      }).join("");
+      for (const item of el.neighbors.querySelectorAll(".item")) {
+        item.addEventListener("click", () => { el.manualNext.value = item.dataset.cell; });
+      }
+    }
+
+    function renderCandidates() {
+      const decision = state.data.last_decision || {};
+      const candidates = Array.isArray(decision.candidate_branches) ? decision.candidate_branches.slice(0, 20) : [];
+      el.candidates.innerHTML = candidates.map((c, idx) => {
+        const path = (c.path || []).map((p) => `(${p[0]},${p[1]})`).join(" ");
+        return `<div class="item" data-path="${path}">#${idx + 1} score=${fmt(c.score)} mode=${c.planning_mode || ""}<br>${path}</div>`;
+      }).join("") || "<div class='hint'>尚无候选分支，先执行一步。</div>";
+    }
+
+    function renderDecision() {
+      el.decision.textContent = JSON.stringify(state.data.last_decision || {}, null, 2);
+    }
+
+    function draw() {
+      const data = state.data;
+      if (!data) return;
+      const canvas = el.canvas;
+      const parent = canvas.parentElement.getBoundingClientRect();
+      const size = Math.max(480, Math.floor(Math.min(parent.width, parent.height || parent.width)));
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(parent.width * dpr);
+      canvas.height = Math.floor(size * dpr);
+      canvas.style.height = `${size}px`;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, parent.width, size);
+      const rows = data.grid.length;
+      const cols = data.grid[0].length;
+      const cell = Math.floor(Math.min((parent.width - 24) / cols, (size - 24) / rows));
+      state.cell = cell;
+      state.offsetX = Math.floor((parent.width - cell * cols) / 2);
+      state.offsetY = Math.floor((size - cell * rows) / 2);
+      const maxAbs = maxAbsActivity(data.activity);
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const px = state.offsetX + x * cell;
+          const py = state.offsetY + y * cell;
+          const grid = data.grid[y][x];
+          const act = data.activity[y][x] || 0;
+          ctx.fillStyle = cellColor(grid, data.visit_count[y][x], act, maxAbs);
+          ctx.fillRect(px, py, cell, cell);
+          ctx.strokeStyle = "#bac4d0";
+          ctx.strokeRect(px, py, cell, cell);
+          ctx.fillStyle = grid === 2 ? "#fff" : "#1d2733";
+          ctx.font = "10px Arial";
+          ctx.fillText(act.toFixed(1), px + 3, py + 12);
+          if (data.visit_count[y][x] > 0 && grid !== 2) {
+            ctx.fillStyle = "#155724";
+            ctx.fillText(String(data.visit_count[y][x]), px + 3, py + cell - 4);
+          }
+        }
+      }
+      drawPath(ctx, data.path, cell);
+      drawCandidates(ctx, data.last_decision, cell);
+      drawMarker(ctx, data.current, cell, "#d62728", "C");
+    }
+
+    function drawPath(ctx, path, cell) {
+      if (!path || path.length < 2) return;
+      ctx.strokeStyle = "#1769aa";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < path.length; i++) {
+        const [x, y] = path[i];
+        const px = state.offsetX + x * cell + cell / 2;
+        const py = state.offsetY + y * cell + cell / 2;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
+
+    function drawCandidates(ctx, decision, cell) {
+      if (!decision || !Array.isArray(decision.candidate_branches)) return;
+      const current = state.data.current;
+      for (const candidate of decision.candidate_branches.slice(0, 8)) {
+        const path = candidate.path || [];
+        if (!path.length) continue;
+        ctx.strokeStyle = "rgba(123, 97, 255, 0.35)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(state.offsetX + current[0] * cell + cell / 2, state.offsetY + current[1] * cell + cell / 2);
+        for (const [x, y] of path) ctx.lineTo(state.offsetX + x * cell + cell / 2, state.offsetY + y * cell + cell / 2);
+        ctx.stroke();
+      }
+      if (decision.selected_x !== undefined) {
+        drawMarker(ctx, [decision.selected_x, decision.selected_y], cell, "#ff7f0e", "N");
+      }
+    }
+
+    function drawMarker(ctx, point, cell, color, text) {
+      const [x, y] = point;
+      const cx = state.offsetX + x * cell + cell / 2;
+      const cy = state.offsetY + y * cell + cell / 2;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.max(8, cell * 0.28), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 12px Arial";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, cx, cy);
+      ctx.textAlign = "start";
+      ctx.textBaseline = "alphabetic";
+    }
+
+    function cellColor(grid, visits, activity, maxAbs) {
+      if (grid === 2) return "#222";
+      const t = maxAbs ? Math.max(0, activity) / maxAbs : 0;
+      const r = Math.round(255 - 70 * t);
+      const g = Math.round(255 - 135 * t);
+      const b = Math.round(255 - 20 * t);
+      if (visits > 0) return `rgb(${Math.min(r, 120)}, ${Math.max(190, g)}, ${Math.min(b, 130)})`;
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+
+    function maxAbsActivity(activity) {
+      let max = 0;
+      for (const row of activity || []) for (const v of row) max = Math.max(max, Math.abs(v));
+      return max || 1;
+    }
+
+    function percent(v) { return `${(Number(v || 0) * 100).toFixed(1)}%`; }
+    function fmt(v) { return Number(v || 0).toFixed(2); }
+
+    el.stepBtn.addEventListener("click", async () => {
+      try {
+        const payload = {
+          forced_mode: el.forcedMode.value,
+          manual_next: el.manualNext.value.trim(),
+          mode_weights: JSON.parse(el.weights.value || "{}"),
+        };
+        el.manualNext.value = "";
+        setData(await api("/api/step", payload));
+      } catch (err) {
+        el.status.textContent = err.message;
+      }
+    });
+    el.resetBtn.addEventListener("click", async () => {
+      try {
+        el.manualNext.value = "";
+        el.forcedMode.value = "auto";
+        el.weights.value = "";
+        setData(await api("/api/reset", {}));
+      } catch (err) {
+        el.status.textContent = err.message;
+      }
+    });
+    el.canvas.addEventListener("click", (event) => {
+      if (!state.data) return;
+      const rect = el.canvas.getBoundingClientRect();
+      const x = Math.floor((event.clientX - rect.left - state.offsetX) / state.cell);
+      const y = Math.floor((event.clientY - rect.top - state.offsetY) / state.cell);
+      const hit = state.data.neighbors.find((n) => n.cell[0] === x && n.cell[1] === y);
+      if (hit) el.manualNext.value = `${x},${y}`;
+    });
+    window.addEventListener("resize", draw);
+    loadState().catch((err) => { el.status.textContent = err.message; });
+  </script>
+</body>
+</html>

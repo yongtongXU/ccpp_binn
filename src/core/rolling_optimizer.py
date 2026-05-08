@@ -406,6 +406,21 @@ class RollingOptimizer:
         }
 
     def classify_planning_state(self, usv: USV, cell_map: CellMap) -> PlanningState:
+        forced_mode = str(self.config.get("debug_forced_planning_mode") or "").strip()
+        if forced_mode and forced_mode != "auto":
+            current = usv.current_cell
+            traversable_neighbors = cell_map.neighbors8(current)
+            movement_neighbors = self._movement_neighbors(cell_map, current)
+            uncovered_neighbors = [n for n in movement_neighbors if cell_map.is_uncovered(n)]
+            return PlanningState(
+                mode=forced_mode,
+                reason="debug_forced_mode",
+                traversable_neighbors=len(traversable_neighbors),
+                uncovered_neighbors=len(uncovered_neighbors),
+                obstacle_pressure=self._obstacle_risk(cell_map, current),
+                current_dead_zone=1.0 if cell_map.is_dead_zone(current) else 0.0,
+            )
+
         current = usv.current_cell
         traversable_neighbors = cell_map.neighbors8(current)
         movement_neighbors = self._movement_neighbors(cell_map, current)
