@@ -198,7 +198,7 @@
     <section class="left">
       <div class="panel">
         <h1>15x15 四障碍单步调试台</h1>
-        <p class="hint">每次点击“执行一步”只推进一个元胞。可以强制模式、手动填下一步坐标，或直接修改模式权重 JSON 后再执行。</p>
+        <p class="hint">每次点击“执行一步”只推进一个元胞。算法会快速判断当前模式，你可以纠正、新增模式，或手动指定下一步。</p>
       </div>
       <div class="panel stage">
         <canvas id="mapCanvas"></canvas>
@@ -216,21 +216,40 @@
       <div class="panel metrics" id="metrics"></div>
       <div class="panel">
         <h2>单步控制</h2>
-        <label>强制规划模式
+        <label>本步使用模式
           <select id="forcedMode"></select>
+        </label>
+        <label>新增本步模式，可留空
+          <input id="customForcedMode" placeholder="例如 narrow_exit">
         </label>
         <label>手动下一步坐标，可留空使用算法建议
           <input id="manualNext" placeholder="例如 1,0">
         </label>
         <div class="buttons">
           <button class="primary" id="stepBtn">执行一步</button>
+          <button id="undoBtn">返回上一步</button>
+          <button id="saveBtn">保存</button>
           <button id="resetBtn">重置</button>
         </div>
-        <p class="hint">点击邻居列表或地图上的相邻可通行格，会自动填入手动下一步。</p>
+        <p class="hint">auto 使用算法判断；选择或新增模式会参与这一步评分。点击邻居列表或地图上的相邻可通行格，会自动填入手动下一步。</p>
         <div class="status" id="status"></div>
       </div>
       <div class="panel">
-        <h2>当前局部状态</h2>
+        <h2>当前模式纠正</h2>
+        <label>我认为当前模式是
+          <select id="correctedMode"></select>
+        </label>
+        <label>新增当前模式，可留空
+          <input id="customCorrectedMode" placeholder="例如 obstacle_gap">
+        </label>
+        <label>备注，可留空
+          <input id="modeNote" placeholder="为什么纠正">
+        </label>
+        <button id="annotateBtn">保存模式纠正</button>
+        <p class="hint">纠正会写入标注文件，不会自动移动。下一步若要按这个模式走，请在“本步使用模式”中选择它。</p>
+      </div>
+      <div class="panel">
+        <h2>算法当前局部状态</h2>
         <div class="mono" id="planningState"></div>
       </div>
       <div class="panel">
@@ -240,10 +259,6 @@
       <div class="panel">
         <h2>最近候选分支</h2>
         <div class="list" id="candidates"></div>
-      </div>
-      <div class="panel">
-        <h2>模式权重 JSON</h2>
-        <textarea id="weights"></textarea>
       </div>
       <div class="panel">
         <h2>最近决策详情</h2>
@@ -256,14 +271,20 @@
       canvas: document.getElementById("mapCanvas"),
       metrics: document.getElementById("metrics"),
       forcedMode: document.getElementById("forcedMode"),
+      customForcedMode: document.getElementById("customForcedMode"),
       manualNext: document.getElementById("manualNext"),
       stepBtn: document.getElementById("stepBtn"),
+      undoBtn: document.getElementById("undoBtn"),
+      saveBtn: document.getElementById("saveBtn"),
       resetBtn: document.getElementById("resetBtn"),
+      correctedMode: document.getElementById("correctedMode"),
+      customCorrectedMode: document.getElementById("customCorrectedMode"),
+      modeNote: document.getElementById("modeNote"),
+      annotateBtn: document.getElementById("annotateBtn"),
       status: document.getElementById("status"),
       planningState: document.getElementById("planningState"),
       neighbors: document.getElementById("neighbors"),
       candidates: document.getElementById("candidates"),
-      weights: document.getElementById("weights"),
       decision: document.getElementById("decision"),
     };
     const state = { data: null, cell: 0, offsetX: 0, offsetY: 0 };
@@ -286,24 +307,32 @@
 
     function setData(data) {
       state.data = data;
-      if (!el.forcedMode.options.length) {
-        for (const mode of data.planning_modes) {
-          const option = document.createElement("option");
-          option.value = mode;
-          option.textContent = mode;
-          el.forcedMode.appendChild(option);
-        }
-      }
-      if (!el.weights.value.trim()) {
-        el.weights.value = JSON.stringify(data.mode_weights, null, 2);
-      }
+      syncModeOptions(data.planning_modes || []);
       renderMetrics();
       renderPlanningState();
       renderNeighbors();
       renderCandidates();
       renderDecision();
       draw();
-      el.status.textContent = data.finished ? "已完成全覆盖。" : `事件：${data.event}`;
+      el.status.textContent = data.finished ? "已完成全覆盖。" : `事件：${data.event}；保存到 ${data.save_paths.json}`;
+    }
+
+    function syncModeOptions(modes) {
+      const previousForced = el.forcedMode.value || "auto";
+      const previousCorrected = el.correctedMode.value || (state.data?.planning_state?.mode || "frontier_following");
+      fillSelect(el.forcedMode, modes, previousForced);
+      fillSelect(el.correctedMode, modes.filter((m) => m !== "auto"), previousCorrected);
+    }
+
+    function fillSelect(select, values, previous) {
+      select.innerHTML = "";
+      for (const mode of values) {
+        const option = document.createElement("option");
+        option.value = mode;
+        option.textContent = mode;
+        select.appendChild(option);
+      }
+      if (values.includes(previous)) select.value = previous;
     }
 
     function renderMetrics() {
@@ -315,6 +344,7 @@
         ["coverage", percent(data.coverage_rate)],
         ["repeat", percent(data.repeated_coverage_rate)],
         ["turns", data.metrics.number_of_turns],
+        ["undo", data.can_undo ? "yes" : "no"],
       ];
       el.metrics.innerHTML = metrics.map(([k, v]) => `<div class="metric"><span>${k}</span><strong>${v}</strong></div>`).join("");
     }
@@ -462,10 +492,11 @@
       try {
         const payload = {
           forced_mode: el.forcedMode.value,
+          custom_forced_mode: el.customForcedMode.value.trim(),
           manual_next: el.manualNext.value.trim(),
-          mode_weights: JSON.parse(el.weights.value || "{}"),
         };
         el.manualNext.value = "";
+        el.customForcedMode.value = "";
         setData(await api("/api/step", payload));
       } catch (err) {
         el.status.textContent = err.message;
@@ -475,8 +506,39 @@
       try {
         el.manualNext.value = "";
         el.forcedMode.value = "auto";
-        el.weights.value = "";
+        el.customForcedMode.value = "";
+        el.customCorrectedMode.value = "";
+        el.modeNote.value = "";
         setData(await api("/api/reset", {}));
+      } catch (err) {
+        el.status.textContent = err.message;
+      }
+    });
+    el.undoBtn.addEventListener("click", async () => {
+      try {
+        el.manualNext.value = "";
+        setData(await api("/api/undo", {}));
+      } catch (err) {
+        el.status.textContent = err.message;
+      }
+    });
+    el.saveBtn.addEventListener("click", async () => {
+      try {
+        setData(await api("/api/save", {}));
+      } catch (err) {
+        el.status.textContent = err.message;
+      }
+    });
+    el.annotateBtn.addEventListener("click", async () => {
+      try {
+        const data = await api("/api/annotate-mode", {
+          corrected_mode: el.correctedMode.value,
+          custom_mode: el.customCorrectedMode.value.trim(),
+          note: el.modeNote.value.trim(),
+        });
+        el.customCorrectedMode.value = "";
+        el.modeNote.value = "";
+        setData(data);
       } catch (err) {
         el.status.textContent = err.message;
       }

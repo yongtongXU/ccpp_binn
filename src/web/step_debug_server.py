@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import mimetypes
 from copy import deepcopy
@@ -22,6 +23,7 @@ from src.utils.config import load_config
 ROOT = Path(__file__).resolve().parents[2]
 WEB_ROOT = ROOT / "web"
 SCENARIO_PATH = ROOT / "configs" / "scenarios" / "four_obstacles_15x15.yaml"
+DEBUG_OUTPUT_ROOT = ROOT / "outputs" / "step_debug"
 PLANNING_MODES = [
     "auto",
     "open_water",
@@ -48,11 +50,16 @@ class StepDebugSession:
         self.config = cfg
         self.planner = CoveragePlanner(cfg)
         self.step_index = 0
+        self.history: list[dict[str, Any]] = []
+        self.annotations: list[dict[str, Any]] = []
+        self.step_log: list[dict[str, Any]] = []
+        self.custom_modes: list[str] = []
         self.planner.cell_map.mark_covered(self.planner.usv.current_cell)
         self.planner.gbnn.initialize(self.planner.cell_map)
         self.planner._record_path_row(0, "normal", "none")
         self.planner.coverage_history.append(self.planner.cell_map.coverage_rate())
         self.planner.strategy.after_step(self.planner.cell_map.coverage_rate())
+        self._save_debug_log()
         return self.state("reset")
 
     def state(self, event: str = "state") -> dict[str, Any]:
@@ -86,13 +93,16 @@ class StepDebugSession:
             "path": [[int(x), int(y)] for x, y in planner.usv.path],
             "neighbors": self._neighbor_options(),
             "last_decision": self._last_decision(),
-            "mode_weights": self._rolling_config().get("mode_weights", {}),
-            "planning_modes": PLANNING_MODES,
+            "annotations": self.annotations,
+            "save_paths": self._save_paths(),
+            "can_undo": bool(self.history),
+            "planning_modes": self._planning_modes(),
         }
 
     def step(self, payload: dict[str, Any]) -> dict[str, Any]:
         if self.planner.cell_map.coverage_rate() >= 1.0:
             return self.state("finished")
+        self._push_history()
         self._apply_debug_overrides(payload)
         self.step_index += 1
         self.planner.gbnn.update(self.planner.cell_map)
@@ -121,26 +131,56 @@ class StepDebugSession:
         self.planner.coverage_history.append(self.planner.cell_map.coverage_rate())
         self.planner.strategy.after_step(self.planner.cell_map.coverage_rate())
         self.planner._record_path_row(self.step_index, self.planner.usv.mode_history[-1], self.planner.usv.escape_type_history[-1])
+        self.step_log.append(self._step_record(decision))
+        self._save_debug_log()
         return self.state("step")
+
+    def undo(self) -> dict[str, Any]:
+        if not self.history:
+            return self.state("undo_empty")
+        snapshot = self.history.pop()
+        self.config = snapshot["config"]
+        self.planner = snapshot["planner"]
+        self.step_index = snapshot["step_index"]
+        self.annotations = snapshot["annotations"]
+        self.step_log = snapshot["step_log"]
+        self.custom_modes = snapshot["custom_modes"]
+        self._save_debug_log()
+        return self.state("undo")
+
+    def annotate_mode(self, payload: dict[str, Any]) -> dict[str, Any]:
+        mode = self._mode_from_payload(payload, "corrected_mode", "custom_mode")
+        if not mode:
+            raise ValueError("corrected_mode is required")
+        self._remember_mode(mode)
+        current_state = self._classify_now()
+        annotation = {
+            "step": self.step_index,
+            "cell": [int(self.planner.usv.current_cell[0]), int(self.planner.usv.current_cell[1])],
+            "algorithm_mode": current_state.get("mode"),
+            "corrected_mode": mode,
+            "note": str(payload.get("note") or ""),
+        }
+        self.annotations.append(annotation)
+        self._save_debug_log()
+        return self.state("annotate_mode")
+
+    def save(self) -> dict[str, Any]:
+        self._save_debug_log()
+        data = self.state("save")
+        data["saved"] = True
+        return data
 
     def _rolling_config(self) -> dict[str, Any]:
         return self.config.setdefault("rolling_optimizer", {})
 
     def _apply_debug_overrides(self, payload: dict[str, Any]) -> None:
         rolling_cfg = self._rolling_config()
-        forced_mode = str(payload.get("forced_mode") or "auto")
+        forced_mode = self._mode_from_payload(payload, "forced_mode", "custom_forced_mode") or "auto"
+        self._remember_mode(forced_mode)
         rolling_cfg["debug_forced_planning_mode"] = "" if forced_mode == "auto" else forced_mode
         if isinstance(self.planner.strategy, RollingGBNNStrategy):
             self.planner.strategy.rolling.config["debug_forced_planning_mode"] = rolling_cfg["debug_forced_planning_mode"]
-        raw_weights = payload.get("mode_weights")
-        if raw_weights in (None, ""):
-            return
-        weights = raw_weights if isinstance(raw_weights, dict) else json.loads(str(raw_weights))
-        if not isinstance(weights, dict):
-            raise ValueError("mode_weights must be a JSON object")
-        rolling_cfg["mode_weights"] = weights
-        if isinstance(self.planner.strategy, RollingGBNNStrategy):
-            self.planner.strategy.rolling.config["mode_weights"] = weights
 
     def _manual_cell(self, payload: dict[str, Any]) -> Cell | None:
         raw = payload.get("manual_next")
@@ -165,6 +205,129 @@ class StepDebugSession:
         details["planner_suggested"] = [int(suggested.next_cell[0]), int(suggested.next_cell[1])] if suggested.next_cell else None
         details["suggested_details"] = suggested.details
         return StepDecision(next_cell=cell, branch=[cell], details=details, mode="normal", escape_type="none")
+
+    def _mode_from_payload(self, payload: dict[str, Any], select_key: str, custom_key: str) -> str:
+        custom = str(payload.get(custom_key) or "").strip()
+        if custom:
+            return custom
+        return str(payload.get(select_key) or "").strip()
+
+    def _remember_mode(self, mode: str) -> None:
+        if not mode or mode == "auto" or mode in PLANNING_MODES or mode in self.custom_modes:
+            return
+        self.custom_modes.append(mode)
+
+    def _planning_modes(self) -> list[str]:
+        return [*PLANNING_MODES, *self.custom_modes]
+
+    def _push_history(self) -> None:
+        self.history.append(
+            {
+                "config": deepcopy(self.config),
+                "planner": deepcopy(self.planner),
+                "step_index": self.step_index,
+                "annotations": deepcopy(self.annotations),
+                "step_log": deepcopy(self.step_log),
+                "custom_modes": deepcopy(self.custom_modes),
+            }
+        )
+
+    def _step_record(self, decision: StepDecision) -> dict[str, Any]:
+        current_state = self._classify_now()
+        last_decision = self._last_decision() or {}
+        return {
+            "step": self.step_index,
+            "cell": [int(self.planner.usv.current_cell[0]), int(self.planner.usv.current_cell[1])],
+            "coverage_rate": self.planner.cell_map.coverage_rate(),
+            "repeated_coverage_rate": self.planner.cell_map.repeated_coverage_rate(),
+            "mode": current_state.get("mode"),
+            "mode_reason": current_state.get("reason"),
+            "selected": [int(decision.next_cell[0]), int(decision.next_cell[1])] if decision.next_cell else None,
+            "manual_override": bool(decision.details.get("manual_override")),
+            "planner_suggested": decision.details.get("planner_suggested"),
+            "decision": last_decision,
+        }
+
+    def _save_paths(self) -> dict[str, str]:
+        base = DEBUG_OUTPUT_ROOT / self.planner.scenario
+        return {
+            "json": str(base / "step_debug_log.json"),
+            "csv": str(base / "step_debug_steps.csv"),
+            "annotations_csv": str(base / "mode_annotations.csv"),
+        }
+
+    def _save_debug_log(self) -> None:
+        paths = self._save_paths()
+        base = Path(paths["json"]).parent
+        base.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "scenario": self.planner.scenario,
+            "step": self.step_index,
+            "path_rows": self.planner.path_rows,
+            "decision_rows": self.planner.decision_rows,
+            "escape_rows": self.planner.escape_rows,
+            "step_log": self.step_log,
+            "annotations": self.annotations,
+            "state": {
+                "current": [int(self.planner.usv.current_cell[0]), int(self.planner.usv.current_cell[1])],
+                "coverage_rate": self.planner.cell_map.coverage_rate(),
+                "repeated_coverage_rate": self.planner.cell_map.repeated_coverage_rate(),
+            },
+        }
+        Path(paths["json"]).write_text(json.dumps(to_jsonable(payload), ensure_ascii=False, indent=2), encoding="utf-8")
+        self._write_step_csv(Path(paths["csv"]))
+        self._write_annotations_csv(Path(paths["annotations_csv"]))
+
+    def _write_step_csv(self, path: Path) -> None:
+        columns = [
+            "step",
+            "x",
+            "y",
+            "coverage_rate",
+            "repeated_coverage_rate",
+            "mode",
+            "mode_reason",
+            "manual_override",
+            "planner_suggested",
+            "selected",
+        ]
+        with path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=columns)
+            writer.writeheader()
+            for row in self.step_log:
+                cell = row.get("cell") or ["", ""]
+                writer.writerow(
+                    {
+                        "step": row.get("step"),
+                        "x": cell[0],
+                        "y": cell[1],
+                        "coverage_rate": row.get("coverage_rate"),
+                        "repeated_coverage_rate": row.get("repeated_coverage_rate"),
+                        "mode": row.get("mode"),
+                        "mode_reason": row.get("mode_reason"),
+                        "manual_override": row.get("manual_override"),
+                        "planner_suggested": json.dumps(row.get("planner_suggested"), ensure_ascii=False),
+                        "selected": json.dumps(row.get("selected"), ensure_ascii=False),
+                    }
+                )
+
+    def _write_annotations_csv(self, path: Path) -> None:
+        columns = ["step", "x", "y", "algorithm_mode", "corrected_mode", "note"]
+        with path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=columns)
+            writer.writeheader()
+            for row in self.annotations:
+                cell = row.get("cell") or ["", ""]
+                writer.writerow(
+                    {
+                        "step": row.get("step"),
+                        "x": cell[0],
+                        "y": cell[1],
+                        "algorithm_mode": row.get("algorithm_mode"),
+                        "corrected_mode": row.get("corrected_mode"),
+                        "note": row.get("note"),
+                    }
+                )
 
     def _classify_now(self) -> dict[str, Any]:
         if not isinstance(self.planner.strategy, RollingGBNNStrategy):
@@ -208,9 +371,6 @@ class StepDebugSession:
         return row
 
 
-SESSION = StepDebugSession()
-
-
 class StepDebugHandler(SimpleHTTPRequestHandler):
     server_version = "CCPPStepDebug/1.0"
 
@@ -232,6 +392,12 @@ class StepDebugHandler(SimpleHTTPRequestHandler):
                 result = SESSION.reset()
             elif parsed.path == "/api/step":
                 result = SESSION.step(payload)
+            elif parsed.path == "/api/undo":
+                result = SESSION.undo()
+            elif parsed.path == "/api/annotate-mode":
+                result = SESSION.annotate_mode(payload)
+            elif parsed.path == "/api/save":
+                result = SESSION.save()
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return
@@ -291,6 +457,9 @@ def to_jsonable(value: Any) -> Any:
     if isinstance(value, np.ndarray):
         return value.tolist()
     return value
+
+
+SESSION = StepDebugSession()
 
 
 def main() -> None:
