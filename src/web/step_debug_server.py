@@ -106,6 +106,11 @@ class StepDebugSession:
             return self.state("finished")
         self._push_history()
         pre_step_state = self._classify_now()
+        pre_cell = self.planner.usv.current_cell
+        pre_step = self.step_index
+        pre_coverage_rate = self.planner.cell_map.coverage_rate()
+        pre_repeated_coverage_rate = self.planner.cell_map.repeated_coverage_rate()
+        user_mode = self._user_mode(payload, pre_step_state)
         self._apply_debug_overrides(payload)
         self.step_index += 1
         self.planner.gbnn.update(self.planner.cell_map)
@@ -138,7 +143,18 @@ class StepDebugSession:
         self.planner.coverage_history.append(self.planner.cell_map.coverage_rate())
         self.planner.strategy.after_step(self.planner.cell_map.coverage_rate())
         self.planner._record_path_row(self.step_index, self.planner.usv.mode_history[-1], self.planner.usv.escape_type_history[-1])
-        self.step_log.append(self._step_record(decision))
+        self.step_log.append(
+            self._step_record(
+                step=pre_step,
+                cell=pre_cell,
+                decision=decision,
+                suggested=suggested,
+                planning_state=pre_step_state,
+                user_mode=user_mode,
+                coverage_rate=pre_coverage_rate,
+                repeated_coverage_rate=pre_repeated_coverage_rate,
+            )
+        )
         self._save_debug_log()
         return self.state("step")
 
@@ -226,6 +242,12 @@ class StepDebugSession:
             return custom
         return str(payload.get(select_key) or "").strip()
 
+    def _user_mode(self, payload: dict[str, Any], planning_state: dict[str, Any]) -> str:
+        mode = self._mode_from_payload(payload, "forced_mode", "custom_forced_mode")
+        if not mode or mode == "auto":
+            return str(planning_state.get("mode") or "")
+        return mode
+
     def _remember_mode(self, mode: str) -> None:
         if not mode or mode == "auto" or mode in PLANNING_MODES or mode in self.custom_modes:
             return
@@ -246,24 +268,35 @@ class StepDebugSession:
             }
         )
 
-    def _step_record(self, decision: StepDecision) -> dict[str, Any]:
-        current_state = self._classify_now()
-        last_decision = self._last_decision() or {}
+    def _step_record(
+        self,
+        *,
+        step: int,
+        cell: Cell,
+        decision: StepDecision,
+        suggested: Cell | None,
+        planning_state: dict[str, Any],
+        user_mode: str,
+        coverage_rate: float,
+        repeated_coverage_rate: float,
+    ) -> dict[str, Any]:
+        selected = decision.next_cell
         return {
-            "step": self.step_index,
-            "cell": [int(self.planner.usv.current_cell[0]), int(self.planner.usv.current_cell[1])],
-            "coverage_rate": self.planner.cell_map.coverage_rate(),
-            "repeated_coverage_rate": self.planner.cell_map.repeated_coverage_rate(),
-            "mode": current_state.get("mode"),
-            "mode_label": current_state.get("mode_label"),
-            "mode_reason": current_state.get("reason"),
-            "pre_step_mode": last_decision.get("pre_step_mode"),
-            "pre_step_mode_label": last_decision.get("pre_step_mode_label"),
-            "pre_step_mode_reason": last_decision.get("pre_step_mode_reason"),
-            "selected": [int(decision.next_cell[0]), int(decision.next_cell[1])] if decision.next_cell else None,
-            "manual_override": bool(decision.details.get("manual_override")),
-            "planner_suggested": decision.details.get("planner_suggested"),
-            "decision": last_decision,
+            "step": int(step),
+            "x": int(cell[0]),
+            "y": int(cell[1]),
+            "mode": decision.mode,
+            "next_pos_x": int(suggested[0]) if suggested else "",
+            "next_pos_y": int(suggested[1]) if suggested else "",
+            "user_next_pos_x": int(selected[0]) if selected else "",
+            "user_next_pos_y": int(selected[1]) if selected else "",
+            "planning_mode": planning_state.get("mode"),
+            "planning_mode_label": planning_state.get("mode_label"),
+            "user_planning_mode": user_mode,
+            "user_planning_mode_label": mode_label(user_mode),
+            "escape_type": decision.escape_type,
+            "coverage_rate": coverage_rate,
+            "repeated_coverage_rate": repeated_coverage_rate,
         }
 
     def _save_paths(self) -> dict[str, str]:
@@ -278,21 +311,7 @@ class StepDebugSession:
         paths = self._save_paths()
         base = Path(paths["json"]).parent
         base.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "scenario": self.planner.scenario,
-            "step": self.step_index,
-            "path_rows": self.planner.path_rows,
-            "decision_rows": self.planner.decision_rows,
-            "escape_rows": self.planner.escape_rows,
-            "step_log": self.step_log,
-            "annotations": self.annotations,
-            "state": {
-                "current": [int(self.planner.usv.current_cell[0]), int(self.planner.usv.current_cell[1])],
-                "coverage_rate": self.planner.cell_map.coverage_rate(),
-                "repeated_coverage_rate": self.planner.cell_map.repeated_coverage_rate(),
-            },
-        }
-        Path(paths["json"]).write_text(json.dumps(to_jsonable(payload), ensure_ascii=False, indent=2), encoding="utf-8")
+        Path(paths["json"]).write_text(json.dumps(to_jsonable(self.step_log), ensure_ascii=False, indent=2), encoding="utf-8")
         self._write_step_csv(Path(paths["csv"]))
         self._write_annotations_csv(Path(paths["annotations_csv"]))
 
@@ -301,41 +320,24 @@ class StepDebugSession:
             "step",
             "x",
             "y",
+            "mode",
+            "next_pos_x",
+            "next_pos_y",
+            "user_next_pos_x",
+            "user_next_pos_y",
+            "planning_mode",
+            "planning_mode_label",
+            "user_planning_mode",
+            "user_planning_mode_label",
+            "escape_type",
             "coverage_rate",
             "repeated_coverage_rate",
-            "mode",
-            "mode_label",
-            "mode_reason",
-            "pre_step_mode",
-            "pre_step_mode_label",
-            "pre_step_mode_reason",
-            "manual_override",
-            "planner_suggested",
-            "selected",
         ]
         with path.open("w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=columns)
             writer.writeheader()
             for row in self.step_log:
-                cell = row.get("cell") or ["", ""]
-                writer.writerow(
-                    {
-                        "step": row.get("step"),
-                        "x": cell[0],
-                        "y": cell[1],
-                        "coverage_rate": row.get("coverage_rate"),
-                        "repeated_coverage_rate": row.get("repeated_coverage_rate"),
-                        "mode": row.get("mode"),
-                        "mode_label": row.get("mode_label"),
-                        "mode_reason": row.get("mode_reason"),
-                        "pre_step_mode": row.get("pre_step_mode"),
-                        "pre_step_mode_label": row.get("pre_step_mode_label"),
-                        "pre_step_mode_reason": row.get("pre_step_mode_reason"),
-                        "manual_override": row.get("manual_override"),
-                        "planner_suggested": json.dumps(row.get("planner_suggested"), ensure_ascii=False),
-                        "selected": json.dumps(row.get("selected"), ensure_ascii=False),
-                    }
-                )
+                writer.writerow({key: row.get(key, "") for key in columns})
 
     def _write_annotations_csv(self, path: Path) -> None:
         columns = ["step", "x", "y", "algorithm_mode", "algorithm_mode_label", "corrected_mode", "corrected_mode_label", "note"]

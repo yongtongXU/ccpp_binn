@@ -228,7 +228,6 @@
         <div class="buttons">
           <button class="primary" id="stepBtn">执行一步</button>
           <button id="undoBtn">返回上一步</button>
-          <button id="saveBtn">保存</button>
           <button id="resetBtn">重置</button>
         </div>
         <p class="hint">auto 使用算法判断；选择或新增模式会参与这一步评分。点击邻居列表或地图上的相邻可通行格，会自动填入手动下一步。</p>
@@ -275,7 +274,6 @@
       manualNext: document.getElementById("manualNext"),
       stepBtn: document.getElementById("stepBtn"),
       undoBtn: document.getElementById("undoBtn"),
-      saveBtn: document.getElementById("saveBtn"),
       resetBtn: document.getElementById("resetBtn"),
       correctedMode: document.getElementById("correctedMode"),
       customCorrectedMode: document.getElementById("customCorrectedMode"),
@@ -314,7 +312,7 @@
       renderCandidates();
       renderDecision();
       draw();
-      el.status.textContent = data.finished ? "已完成全覆盖。" : `事件：${data.event}；保存到 ${data.save_paths.json}`;
+      el.status.textContent = data.finished ? "已完成全覆盖。" : `事件：${data.event}；已自动保存到 ${data.save_paths.json}`;
     }
 
     function syncModeOptions(modes) {
@@ -539,13 +537,6 @@
       try {
         el.manualNext.value = "";
         setData(await api("/api/undo", {}));
-      } catch (err) {
-        el.status.textContent = err.message;
-      }
-    });
-    el.saveBtn.addEventListener("click", async () => {
-      try {
-        setData(await api("/api/save", {}));
       } catch (err) {
         el.status.textContent = err.message;
       }
