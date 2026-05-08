@@ -39,7 +39,7 @@ class RollingOptimizer:
         self._topology_cache = {}
         candidate_limit = int(self.config.get("record_candidate_count", 1_000_000))
         if self.config.get("enabled", True) is False:
-            for n in cell_map.neighbors8(usv.current_cell):
+            for n in self._movement_neighbors(cell_map, usv.current_cell):
                 if cell_map.is_uncovered(n):
                     branch = [n]
                     details = self.score_branch(usv, cell_map, gbnn_field, branch)
@@ -102,7 +102,7 @@ class RollingOptimizer:
         current = usv.current_cell
         direction = 1 if usv.strip_direction >= 0 else -1
         candidates = []
-        for n in cell_map.neighbors8(current):
+        for n in self._movement_neighbors(cell_map, current):
             if not cell_map.is_uncovered(n):
                 continue
             if abs(n[1] - current[1]) != 1:
@@ -137,7 +137,7 @@ class RollingOptimizer:
 
     def _local_candidate_states(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> list[BranchState]:
         candidates: list[BranchState] = []
-        for n in cell_map.neighbors8(usv.current_cell):
+        for n in self._movement_neighbors(cell_map, usv.current_cell):
             branch = [n]
             details = self.score_branch(usv, cell_map, gbnn_field, branch)
             candidates.append(BranchState(branch, float(details["branch_score"]), details))
@@ -155,7 +155,7 @@ class RollingOptimizer:
             for state in beam:
                 branch = state.branch
                 root = branch[-1] if branch else usv.current_cell
-                for n in cell_map.neighbors8(root):
+                for n in self._movement_neighbors(cell_map, root):
                     if not self._allowed_next(usv, cell_map, branch, n):
                         continue
                     new_branch = branch + [n]
@@ -200,7 +200,24 @@ class RollingOptimizer:
         return finished
 
     def _allowed_next(self, usv: USV, cell_map: CellMap, branch: list[Cell], cell: Cell) -> bool:
+        root = branch[-1] if branch else usv.current_cell
+        if not self.config.get("allow_diagonal_normal", False) and _is_diagonal_step(root, cell):
+            return False
+        if not branch and self.current_strip_has_forward_uncovered(usv, cell_map):
+            current_strip = usv.current_strip_id if usv.current_strip_id is not None else usv.current_cell[1]
+            if abs(cell[1] - current_strip) == 1:
+                direction = 1 if usv.strip_direction >= 0 else -1
+                topology = self._local_topology(usv.current_cell, cell, cell_map, direction)
+                threshold = float(self.config.get("topology_detour_pocket_threshold", 0.55))
+                if topology.terrain_type != "pocket" or topology.pocket_score < threshold:
+                    return False
         return True
+
+    def _movement_neighbors(self, cell_map: CellMap, cell: Cell) -> list[Cell]:
+        neighbors = cell_map.neighbors8(cell)
+        if self.config.get("allow_diagonal_normal", False):
+            return neighbors
+        return [n for n in neighbors if not _is_diagonal_step(cell, n)]
 
     def score_branch(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField, branch: list[Cell]) -> dict:
         cfg = self.config
@@ -416,6 +433,8 @@ class RollingOptimizer:
 
     def _local_strip_fallback(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> list[Cell] | None:
         neighbors = cell_map.neighbors8(usv.current_cell)
+        if not self.config.get("allow_diagonal_normal", False):
+            neighbors = [n for n in neighbors if not _is_diagonal_step(usv.current_cell, n)]
         if not neighbors:
             return None
         scored = []
@@ -569,7 +588,9 @@ class RollingOptimizer:
         if component_size >= open_min_component and row_open_ahead >= open_min_run and entry_degree >= 4:
             terrain_type = "open_strip"
             open_strip_score = min(1.0, row_open_ahead / float(max(1, open_min_run * 2)))
-        elif component_size <= pocket_component_max or entry_degree <= 2 or obstacle_pressure >= 0.35:
+        elif component_size <= pocket_component_max or (
+            component_size <= pocket_component_max * 3 and (entry_degree <= 2 or obstacle_pressure >= 0.35)
+        ):
             terrain_type = "pocket"
             compactness = 1.0 - min(component_size / float(max(1, pocket_component_max + 1)), 1.0)
             narrowness = max(0.0, (3.0 - entry_degree) / 3.0)
@@ -630,6 +651,10 @@ def _heading_between(a: Cell, b: Cell) -> int | None:
 def _heading_delta(a: int, b: int) -> int:
     diff = abs(a - b) % 8
     return min(diff, 8 - diff)
+
+
+def _is_diagonal_step(a: Cell, b: Cell) -> bool:
+    return a[0] != b[0] and a[1] != b[1]
 
 
 def _serialize_candidates(candidates: list[BranchState], limit: int) -> list[dict]:

@@ -366,6 +366,7 @@
         <legend>滚动候选树</legend>
         <div class="inline"><input id="useGlobalStripInput" type="checkbox">启用全局条带</div>
         <div class="inline"><input id="usePriorityStripInput" type="checkbox">启用条带优先</div>
+        <div class="inline"><input id="allowDiagonalNormalInput" type="checkbox">允许正常阶段斜向移动</div>
         <label>预测步数
           <input id="horizonInput" type="number" min="1" max="12" value="3">
         </label>
@@ -457,6 +458,7 @@
       noEscape: document.getElementById("noEscapeInput"),
       useGlobalStrip: document.getElementById("useGlobalStripInput"),
       usePriorityStrip: document.getElementById("usePriorityStripInput"),
+      allowDiagonalNormal: document.getElementById("allowDiagonalNormalInput"),
       horizon: document.getElementById("horizonInput"),
       beamWidth: document.getElementById("beamWidthInput"),
       candidateCount: document.getElementById("candidateCountInput"),
@@ -536,6 +538,7 @@
           no_escape: el.noEscape.checked,
           use_global_strip_plan: el.useGlobalStrip.checked,
           use_priority_strip: el.usePriorityStrip.checked,
+          allow_diagonal_normal: el.allowDiagonalNormal.checked,
           horizon: Number(el.horizon.value),
           beam_width: Number(el.beamWidth.value),
           record_candidate_count: Number(el.candidateCount.value),
@@ -634,6 +637,7 @@
       setInput(el.escapeMethod, escape.method || "hybrid");
       el.useGlobalStrip.checked = rolling.use_global_strip_plan !== false;
       el.usePriorityStrip.checked = rolling.use_priority_strip !== false;
+      el.allowDiagonalNormal.checked = Boolean(rolling.allow_diagonal_normal);
       setInput(el.horizon, rolling.horizon);
       setInput(el.beamWidth, rolling.beam_width);
       setInput(el.candidateCount, rolling.record_candidate_count || 1000000);

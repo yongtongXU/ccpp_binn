@@ -288,6 +288,7 @@ def log_run_start(source: str, planner: CoveragePlanner, cfg: dict[str, Any], ou
         "[planner:config] "
         f"gbnn={gbnn.get('enabled', True)} rolling={rolling.get('enabled', True)} escape={escape.get('enabled', True)} "
         f"global_strip={rolling.get('use_global_strip_plan', True)} priority_strip={rolling.get('use_priority_strip', True)} "
+        f"diagonal_normal={rolling.get('allow_diagonal_normal', False)} "
         f"horizon={rolling.get('horizon')} beam={rolling.get('beam_width')} "
         f"candidates={rolling.get('record_candidate_count')} tree={rolling.get('record_tree_count')} "
         f"escape_method={escape.get('method')} save_outputs={payload.get('save_outputs', True)} "
@@ -372,6 +373,8 @@ def apply_web_overrides(cfg: dict[str, Any], payload: dict[str, Any]) -> None:
         cfg.setdefault("rolling_optimizer", {})["use_global_strip_plan"] = bool(payload["use_global_strip_plan"])
     if "use_priority_strip" in payload:
         cfg.setdefault("rolling_optimizer", {})["use_priority_strip"] = bool(payload["use_priority_strip"])
+    if "allow_diagonal_normal" in payload:
+        cfg.setdefault("rolling_optimizer", {})["allow_diagonal_normal"] = bool(payload["allow_diagonal_normal"])
     cfg.setdefault("escape", {})["enabled"] = not bool(payload.get("no_escape", False))
     if payload.get("escape_method"):
         cfg.setdefault("escape", {})["method"] = str(payload["escape_method"])

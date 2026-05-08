@@ -41,6 +41,7 @@ rolling_optimizer:
   record_candidate_count: 1000000
   record_tree_count: 1000000
   max_repeat_in_branch: 3
+  allow_diagonal_normal: false
   allow_immediate_backtrack: false
   w_new_coverage: 8.0
   w_activity: 1.0

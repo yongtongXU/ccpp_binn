@@ -20,13 +20,25 @@ def test_open_map_prefers_new_coverage_neighbor():
     assert branch
 
 
-def test_candidate_tree_expands_all_eight_directions_per_step():
+def test_candidate_tree_expands_all_axis_directions_by_default():
     cm = CellMap(5, 5)
     usv = USV((2, 2))
     cm.mark_covered((2, 2))
     gbnn = GBNNField({})
     gbnn.initialize(cm)
     opt = RollingOptimizer({"horizon": 1, "beam_width": 8, "record_candidate_count": 8})
+    _, _, details = opt.select_next_cell(usv, cm, gbnn)
+    first_steps = {tuple(candidate["path"][0]) for candidate in details["candidate_branches"]}
+    assert first_steps == {(1, 2), (2, 1), (2, 3), (3, 2)}
+
+
+def test_candidate_tree_can_include_diagonal_moves_when_enabled():
+    cm = CellMap(5, 5)
+    usv = USV((2, 2))
+    cm.mark_covered((2, 2))
+    gbnn = GBNNField({})
+    gbnn.initialize(cm)
+    opt = RollingOptimizer({"horizon": 1, "beam_width": 8, "record_candidate_count": 8, "allow_diagonal_normal": True})
     _, _, details = opt.select_next_cell(usv, cm, gbnn)
     first_steps = {tuple(candidate["path"][0]) for candidate in details["candidate_branches"]}
     assert first_steps == set(cm.neighbors8((2, 2)))
