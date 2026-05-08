@@ -25,6 +25,16 @@ class LocalTopology:
     pocket_score: float
 
 
+@dataclass(frozen=True)
+class PlanningState:
+    mode: str
+    reason: str
+    traversable_neighbors: int
+    uncovered_neighbors: int
+    obstacle_pressure: float
+    current_dead_zone: float
+
+
 class RollingOptimizer:
     def __init__(self, config: dict | None = None):
         self.config = config or {}
@@ -32,11 +42,13 @@ class RollingOptimizer:
         self._branch_urgency_cache: dict[tuple[Cell, Cell], float] = {}
         self._topology_cache: dict[tuple[Cell, Cell, int], LocalTopology] = {}
         self._last_candidate_tree: dict = {"levels": []}
+        self._planning_state: PlanningState | None = None
 
     def select_next_cell(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> tuple[Cell | None, list[Cell], dict]:
         self._feature_cache = {}
         self._branch_urgency_cache = {}
         self._topology_cache = {}
+        self._planning_state = self.classify_planning_state(usv, cell_map)
         candidate_limit = int(self.config.get("record_candidate_count", 1_000_000))
         if self.config.get("enabled", True) is False:
             for n in self._movement_neighbors(cell_map, usv.current_cell):
@@ -159,6 +171,8 @@ class RollingOptimizer:
                     if not self._allowed_next(usv, cell_map, branch, n):
                         continue
                     new_branch = branch + [n]
+                    if not self._allowed_for_mode(state=self._planning_state, cell_map=cell_map, usv=usv, branch=new_branch):
+                        continue
                     details = self.score_branch(usv, cell_map, gbnn_field, new_branch)
                     expanded.append(BranchState(new_branch, float(details["branch_score"]), details))
             expanded.sort(key=lambda b: b.score, reverse=True)
@@ -221,6 +235,8 @@ class RollingOptimizer:
 
     def score_branch(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField, branch: list[Cell]) -> dict:
         cfg = self.config
+        planning_state = self._planning_state or self.classify_planning_state(usv, cell_map)
+        mode_weights = self._mode_weights(planning_state.mode)
         virtual_seen: set[Cell] = set()
         new_count = 0
         activity = 0.0
@@ -319,25 +335,25 @@ class RollingOptimizer:
             obstacle += features["obstacle"]
             prev = cell
             prev_heading = heading
-        new_coverage_score = cfg.get("w_new_coverage", 8.0) * new_count
-        activity_score = cfg.get("w_activity", 1.0) * activity / max(1, len(branch))
-        direction_term = cfg.get("w_direction", 4.0) * direction_score / max(1, len(branch))
-        structure_term = cfg.get("w_structure", 3.0) * structure_score / max(1, len(branch))
-        branch_urgency_score = cfg.get("w_branch_urgency", 12.0) * branch_urgency
-        missed_branch_score = cfg.get("w_missed_branch", 35.0) * missed_branch
-        turn_penalty = cfg.get("w_turn", 3.0) * turns
-        repeat_penalty = cfg.get("w_repeat", 2.0) * repeat
-        dead_zone_penalty = cfg.get("w_dead_zone", 5.0) * dead_zone / max(1, len(branch))
-        obstacle_penalty = cfg.get("w_obstacle", 1.5) * obstacle / max(1, len(branch))
-        loop_penalty = 5.0 * meaningless
-        strip_forward_score = cfg.get("w_strip_forward", 18.0) * strip_forward
-        strip_transition_score = cfg.get("w_strip_transition", 14.0) * strip_transition
-        strip_reverse_term = cfg.get("w_strip_reverse", 25.0) * strip_reverse_penalty
-        strip_cross_term = cfg.get("w_strip_cross", 35.0) * strip_cross_penalty
-        strip_loop_term = cfg.get("w_strip_loop", 20.0) * strip_loop_penalty
-        immediate_backtrack_term = cfg.get("w_immediate_backtrack", 1000.0) * immediate_backtrack_penalty
-        topology_zigzag_term = cfg.get("w_topology_zigzag", 30.0) * topology_zigzag_penalty
-        lateral_detour_term = cfg.get("w_lateral_detour", 60.0) * lateral_detour_penalty
+        new_coverage_score = self._weighted_term("new_coverage", cfg.get("w_new_coverage", 8.0) * new_count, mode_weights)
+        activity_score = self._weighted_term("activity", cfg.get("w_activity", 1.0) * activity / max(1, len(branch)), mode_weights)
+        direction_term = self._weighted_term("direction", cfg.get("w_direction", 4.0) * direction_score / max(1, len(branch)), mode_weights)
+        structure_term = self._weighted_term("structure", cfg.get("w_structure", 3.0) * structure_score / max(1, len(branch)), mode_weights)
+        branch_urgency_score = self._weighted_term("branch_urgency", cfg.get("w_branch_urgency", 12.0) * branch_urgency, mode_weights)
+        missed_branch_score = self._weighted_term("missed_branch", cfg.get("w_missed_branch", 35.0) * missed_branch, mode_weights)
+        turn_penalty = self._weighted_term("turn_penalty", cfg.get("w_turn", 3.0) * turns, mode_weights)
+        repeat_penalty = self._weighted_term("repeat_penalty", cfg.get("w_repeat", 2.0) * repeat, mode_weights)
+        dead_zone_penalty = self._weighted_term("dead_zone_penalty", cfg.get("w_dead_zone", 5.0) * dead_zone / max(1, len(branch)), mode_weights)
+        obstacle_penalty = self._weighted_term("obstacle_penalty", cfg.get("w_obstacle", 1.5) * obstacle / max(1, len(branch)), mode_weights)
+        loop_penalty = self._weighted_term("loop_penalty", 5.0 * meaningless, mode_weights)
+        strip_forward_score = self._weighted_term("strip_forward", cfg.get("w_strip_forward", 18.0) * strip_forward, mode_weights)
+        strip_transition_score = self._weighted_term("strip_transition", cfg.get("w_strip_transition", 14.0) * strip_transition, mode_weights)
+        strip_reverse_term = self._weighted_term("strip_reverse_penalty", cfg.get("w_strip_reverse", 25.0) * strip_reverse_penalty, mode_weights)
+        strip_cross_term = self._weighted_term("strip_cross_penalty", cfg.get("w_strip_cross", 35.0) * strip_cross_penalty, mode_weights)
+        strip_loop_term = self._weighted_term("strip_loop_penalty", cfg.get("w_strip_loop", 20.0) * strip_loop_penalty, mode_weights)
+        immediate_backtrack_term = self._weighted_term("immediate_backtrack_penalty", cfg.get("w_immediate_backtrack", 1000.0) * immediate_backtrack_penalty, mode_weights)
+        topology_zigzag_term = self._weighted_term("topology_zigzag_penalty", cfg.get("w_topology_zigzag", 30.0) * topology_zigzag_penalty, mode_weights)
+        lateral_detour_term = self._weighted_term("lateral_detour_penalty", cfg.get("w_lateral_detour", 60.0) * lateral_detour_penalty, mode_weights)
         score = (
             new_coverage_score
             + activity_score
@@ -361,6 +377,11 @@ class RollingOptimizer:
         )
         return {
             "branch_score": float(score),
+            "planning_mode": planning_state.mode,
+            "planning_mode_reason": planning_state.reason,
+            "mode_uncovered_neighbors": float(planning_state.uncovered_neighbors),
+            "mode_traversable_neighbors": float(planning_state.traversable_neighbors),
+            "mode_obstacle_pressure": float(planning_state.obstacle_pressure),
             "new_coverage_score": float(new_coverage_score),
             "activity_score": float(activity_score),
             "direction_score": float(direction_term),
@@ -383,6 +404,143 @@ class RollingOptimizer:
             "topology_component_size": float(topology.component_size if topology is not None else 0),
             "topology_return_cost": float(topology.return_cost if topology is not None else 0.0),
         }
+
+    def classify_planning_state(self, usv: USV, cell_map: CellMap) -> PlanningState:
+        current = usv.current_cell
+        traversable_neighbors = cell_map.neighbors8(current)
+        movement_neighbors = self._movement_neighbors(cell_map, current)
+        uncovered_neighbors = [n for n in movement_neighbors if cell_map.is_uncovered(n)]
+        local_uncovered_neighbors = [n for n in traversable_neighbors if cell_map.is_uncovered(n)]
+        obstacle_pressure = self._obstacle_risk(cell_map, current)
+        dead_zone = 1.0 if cell_map.is_dead_zone(current) else 0.0
+        branch_count = self._uncovered_branch_count(cell_map, current, movement_neighbors)
+
+        if dead_zone and cell_map.coverage_rate() < 1.0:
+            mode, reason = "dead_zone", "no_uncovered_neighbor"
+        elif len(uncovered_neighbors) == 0:
+            mode, reason = "frontier_recovery", "covered_local_frontier"
+        elif len(local_uncovered_neighbors) >= int(self.config.get("mode_open_min_local_uncovered", 6)) and obstacle_pressure <= float(
+            self.config.get("mode_open_max_obstacle_pressure", 0.15)
+        ):
+            mode, reason = "open_water", "wide_uncovered_neighborhood"
+        elif branch_count >= int(self.config.get("mode_junction_min_branches", 3)):
+            mode, reason = "junction_search", "multiple_uncovered_branches"
+        elif obstacle_pressure >= float(self.config.get("mode_obstacle_edge_pressure", 0.35)):
+            mode, reason = "obstacle_edge", "near_boundary_or_obstacle"
+        elif len(traversable_neighbors) <= int(self.config.get("mode_corridor_max_neighbors", 3)):
+            mode, reason = "corridor", "low_local_connectivity"
+        elif len(uncovered_neighbors) >= int(self.config.get("mode_open_min_uncovered_neighbors", 4)) and obstacle_pressure <= float(
+            self.config.get("mode_open_max_obstacle_pressure", 0.15)
+        ):
+            mode, reason = "open_water", "wide_uncovered_neighborhood"
+        elif len(uncovered_neighbors) <= 1:
+            mode, reason = "pocket_entry", "single_uncovered_exit"
+        else:
+            mode, reason = "frontier_following", "ordinary_frontier"
+
+        return PlanningState(
+            mode=mode,
+            reason=reason,
+            traversable_neighbors=len(traversable_neighbors),
+            uncovered_neighbors=len(uncovered_neighbors),
+            obstacle_pressure=obstacle_pressure,
+            current_dead_zone=dead_zone,
+        )
+
+    def _allowed_for_mode(self, state: PlanningState | None, cell_map: CellMap, usv: USV, branch: list[Cell]) -> bool:
+        if not self.config.get("mode_filtering_enabled", True) or state is None or not branch:
+            return True
+        first = branch[0]
+        if state.mode == "open_water" and len(usv.path) >= 2 and first == usv.path[-2]:
+            return False
+        if state.mode in {"dead_zone", "frontier_recovery"}:
+            return any(cell_map.is_uncovered(c) for c in branch)
+        if state.mode == "junction_search" and len(branch) >= 2:
+            return branch[1] != usv.current_cell
+        return True
+
+    def _mode_weights(self, mode: str) -> dict[str, float]:
+        defaults: dict[str, dict[str, float]] = {
+            "open_water": {
+                "direction": 1.25,
+                "turn_penalty": 1.2,
+                "repeat_penalty": 1.2,
+                "dead_zone_penalty": 1.15,
+                "branch_urgency": 0.85,
+                "missed_branch": 0.8,
+            },
+            "junction_search": {
+                "new_coverage": 1.1,
+                "activity": 1.15,
+                "structure": 1.25,
+                "branch_urgency": 1.45,
+                "missed_branch": 1.35,
+                "direction": 0.85,
+                "lateral_detour_penalty": 0.65,
+                "strip_cross_penalty": 0.75,
+            },
+            "corridor": {
+                "direction": 1.15,
+                "structure": 0.85,
+                "turn_penalty": 0.85,
+                "obstacle_penalty": 1.25,
+                "dead_zone_penalty": 1.2,
+                "branch_urgency": 1.2,
+            },
+            "obstacle_edge": {
+                "structure": 1.15,
+                "branch_urgency": 1.25,
+                "obstacle_penalty": 1.45,
+                "dead_zone_penalty": 1.35,
+                "repeat_penalty": 1.15,
+            },
+            "pocket_entry": {
+                "branch_urgency": 1.5,
+                "dead_zone_penalty": 0.75,
+                "obstacle_penalty": 1.2,
+                "repeat_penalty": 1.25,
+            },
+            "dead_zone": {
+                "activity": 1.45,
+                "repeat_penalty": 0.65,
+                "dead_zone_penalty": 0.55,
+                "obstacle_penalty": 0.85,
+            },
+            "frontier_recovery": {
+                "activity": 1.35,
+                "repeat_penalty": 0.75,
+                "dead_zone_penalty": 0.65,
+                "direction": 0.8,
+            },
+            "frontier_following": {
+                "new_coverage": 1.05,
+                "structure": 1.05,
+            },
+        }
+        overrides = self.config.get("mode_weights", {}) or {}
+        weights = dict(defaults.get(mode, {}))
+        weights.update(overrides.get(mode, {}) or {})
+        return weights
+
+    def _weighted_term(self, key: str, value: float, weights: dict[str, float]) -> float:
+        return float(value) * float(weights.get(key, 1.0))
+
+    def _uncovered_branch_count(self, cell_map: CellMap, current: Cell, candidates: list[Cell]) -> int:
+        uncovered = {n for n in candidates if cell_map.is_uncovered(n)}
+        if not uncovered:
+            return 0
+        components = 0
+        while uncovered:
+            components += 1
+            root = uncovered.pop()
+            stack = [root]
+            while stack:
+                cell = stack.pop()
+                connected = [n for n in list(uncovered) if abs(n[0] - cell[0]) + abs(n[1] - cell[1]) == 1]
+                for n in connected:
+                    uncovered.remove(n)
+                    stack.append(n)
+        return components
 
     def current_strip_has_forward_uncovered(self, usv: USV, cell_map: CellMap) -> bool:
         y = usv.current_strip_id if usv.current_strip_id is not None else usv.current_cell[1]
@@ -663,6 +821,7 @@ def _serialize_candidates(candidates: list[BranchState], limit: int) -> list[dic
         {
             "type": "rolling",
             "score": float(candidate.score),
+            "planning_mode": candidate.details.get("planning_mode"),
             "path": [[int(x), int(y)] for x, y in candidate.branch],
         }
         for candidate in ordered

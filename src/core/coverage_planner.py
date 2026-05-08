@@ -189,6 +189,11 @@ class CoveragePlanner:
                 "mode",
                 "escape_type",
                 "method",
+                "planning_mode",
+                "planning_mode_reason",
+                "mode_uncovered_neighbors",
+                "mode_traversable_neighbors",
+                "mode_obstacle_pressure",
                 "branch_score",
                 "new_coverage_score",
                 "activity_score",
@@ -269,6 +274,11 @@ class CoveragePlanner:
                 k: details.get(k)
                 for k in [
                     "branch_score",
+                    "planning_mode",
+                    "planning_mode_reason",
+                    "mode_uncovered_neighbors",
+                    "mode_traversable_neighbors",
+                    "mode_obstacle_pressure",
                     "new_coverage_score",
                     "activity_score",
                     "direction_score",

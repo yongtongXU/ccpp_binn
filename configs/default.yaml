@@ -37,6 +37,13 @@ rolling_optimizer:
   use_global_strip_plan: false
   use_priority_strip: false
   use_strip_constraints: false
+  mode_filtering_enabled: true
+  mode_open_min_local_uncovered: 6
+  mode_open_min_uncovered_neighbors: 4
+  mode_open_max_obstacle_pressure: 0.15
+  mode_junction_min_branches: 3
+  mode_obstacle_edge_pressure: 0.35
+  mode_corridor_max_neighbors: 3
   horizon: 3
   beam_width: 30
   record_candidate_count: 1000000
@@ -65,6 +72,54 @@ rolling_optimizer:
   topology_pocket_component_max: 10
   topology_full_return_cost: 18.0
   topology_detour_pocket_threshold: 0.55
+  mode_weights:
+    open_water:
+      direction: 1.25
+      turn_penalty: 1.2
+      repeat_penalty: 1.2
+      dead_zone_penalty: 1.15
+      branch_urgency: 0.85
+      missed_branch: 0.8
+    junction_search:
+      new_coverage: 1.1
+      activity: 1.15
+      structure: 1.25
+      branch_urgency: 1.45
+      missed_branch: 1.35
+      direction: 0.85
+      lateral_detour_penalty: 0.65
+      strip_cross_penalty: 0.75
+    corridor:
+      direction: 1.15
+      structure: 0.85
+      turn_penalty: 0.85
+      obstacle_penalty: 1.25
+      dead_zone_penalty: 1.2
+      branch_urgency: 1.2
+    obstacle_edge:
+      structure: 1.15
+      branch_urgency: 1.25
+      obstacle_penalty: 1.45
+      dead_zone_penalty: 1.35
+      repeat_penalty: 1.15
+    pocket_entry:
+      branch_urgency: 1.5
+      dead_zone_penalty: 0.75
+      obstacle_penalty: 1.2
+      repeat_penalty: 1.25
+    dead_zone:
+      activity: 1.45
+      repeat_penalty: 0.65
+      dead_zone_penalty: 0.55
+      obstacle_penalty: 0.85
+    frontier_recovery:
+      activity: 1.35
+      repeat_penalty: 0.75
+      dead_zone_penalty: 0.65
+      direction: 0.8
+    frontier_following:
+      new_coverage: 1.05
+      structure: 1.05
 
 escape:
   enabled: true

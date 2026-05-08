@@ -56,6 +56,33 @@ def test_candidate_tree_records_each_depth_level():
     assert [level["depth"] for level in levels] == [1, 2, 3]
     assert all(level["branches"] for level in levels)
     assert all(len(branch["path"]) == level["depth"] for level in levels for branch in level["branches"])
+    assert details["planning_mode"] == "open_water"
+    assert all(branch["planning_mode"] == "open_water" for branch in levels[0]["branches"])
+
+
+def test_planning_state_detects_junction_search():
+    cm = CellMap(5, 5)
+    cm.grid[:, :] = COVERED
+    cm.visit_count[:, :] = 1
+    for cell in [(2, 1), (1, 2), (3, 2), (2, 3)]:
+        cm.grid[cell[1], cell[0]] = UNCOVERED
+        cm.visit_count[cell[1], cell[0]] = 0
+    usv = USV((2, 2))
+    opt = RollingOptimizer({"mode_junction_min_branches": 3})
+    state = opt.classify_planning_state(usv, cm)
+    assert state.mode == "junction_search"
+    assert state.uncovered_neighbors == 4
+
+
+def test_planning_state_detects_dead_zone():
+    cm = CellMap(4, 4)
+    cm.mark_covered((1, 1))
+    for n in cm.neighbors8((1, 1)):
+        cm.mark_covered(n)
+    usv = USV((1, 1))
+    state = RollingOptimizer({}).classify_planning_state(usv, cm)
+    assert state.mode == "dead_zone"
+    assert state.reason == "no_uncovered_neighbor"
 
 
 def test_avoids_obstacle_and_next_is_neighbor():
