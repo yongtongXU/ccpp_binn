@@ -9,6 +9,9 @@ def test_default_strategy_is_rolling_gbnn():
     strategy = create_strategy(cfg)
     assert isinstance(strategy, RollingGBNNStrategy)
     assert strategy.name == "rolling_gbnn"
+    assert cfg["rolling_optimizer"]["use_global_strip_plan"] is False
+    assert cfg["rolling_optimizer"]["use_priority_strip"] is False
+    assert cfg["rolling_optimizer"]["use_strip_constraints"] is False
 
 
 def test_greedy_strategy_entrypoint():

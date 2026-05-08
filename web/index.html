@@ -635,8 +635,8 @@
       setInput(el.maxSteps, planner.max_steps);
       setInput(el.method, method.name);
       setInput(el.escapeMethod, escape.method || "hybrid");
-      el.useGlobalStrip.checked = rolling.use_global_strip_plan !== false;
-      el.usePriorityStrip.checked = rolling.use_priority_strip !== false;
+      el.useGlobalStrip.checked = Boolean(rolling.use_global_strip_plan);
+      el.usePriorityStrip.checked = Boolean(rolling.use_priority_strip);
       el.allowDiagonalNormal.checked = Boolean(rolling.allow_diagonal_normal);
       setInput(el.horizon, rolling.horizon);
       setInput(el.beamWidth, rolling.beam_width);

@@ -4,12 +4,12 @@
 
 ## 1. 总体定位
 
-当前工程的 `rolling_gbnn` 不是单纯的传统 GBNN 邻域最大活性选点算法，而是一个混合式全覆盖路径规划流程：
+当前工程的 `rolling_gbnn` 不是单纯的传统 GBNN 邻域最大活性选点算法，而是一个以滚动候选分支评价为正常阶段主路径的全覆盖规划流程：
 
 1. 用 `GBNNField` 维护覆盖需求活性场。
 2. 用 `RollingGBNNStrategy` 作为策略入口。
-3. 优先尝试全局条带扫描计划 `global_strip_plan`。
-4. 在必要时调用 `RollingOptimizer` 生成有限深度候选分支树并评分。
+3. 默认调用 `RollingOptimizer` 生成有限深度候选分支树并评分。
+4. 全局条带扫描计划和条带优先规则仅在显式启用配置时参与规划。
 5. 当正常规划停滞或进入死区时，调用 `EscapeSelector` 进行回溯或 Dijkstra 逃逸。
 6. 每一步只执行当前选中分支的第一步，然后更新覆盖状态并重新规划。
 
@@ -48,8 +48,9 @@ gbnn:
 
 rolling_optimizer:
   enabled: true
-  use_global_strip_plan: true
-  use_priority_strip: true
+  use_global_strip_plan: false
+  use_priority_strip: false
+  use_strip_constraints: false
   horizon: 3
   beam_width: 30
   w_new_coverage: 8.0
@@ -139,14 +140,14 @@ escape:
 
 `RollingGBNNStrategy.choose_next()` 当前优先级如下：
 
-1. 如果启用 `use_global_strip_plan`，先执行 `_next_strip_plan_step()`。
+1. 如果显式启用 `use_global_strip_plan`，先执行 `_next_strip_plan_step()`。
 2. 如果有正在执行的逃逸路径，则继续 `_continue_escape()`。
 3. 调用 `RollingOptimizer.select_next_cell()` 做滚动候选选择。
 4. 如果当前位置是死区，或滚动优化无法给出有效下一步，则尝试 `_start_escape()`。
 5. 如果逃逸不允许，则尝试 `_local_strip_fallback()`。
 6. 返回 `StepDecision`。
 
-关键点：当前代码中，全局条带计划的优先级高于滚动候选树。因此很多正常路径其实首先来自 `global_strip_plan`，不是来自候选树评分。
+关键点：默认配置下，全局条带计划不再抢占候选树；正常阶段首先由滚动候选分支评分主导。
 
 ## 6. 全局条带计划
 
@@ -177,7 +178,7 @@ escape:
 候选选择优先级：
 
 1. 如果 `rolling_optimizer.enabled` 为 false，则退化为找一个未覆盖邻居。
-2. 如果启用 `use_priority_strip`，先尝试 `_priority_strip_step()`。
+2. 如果显式启用 `use_priority_strip`，先尝试 `_priority_strip_step()`。
 3. 若优先规则没有返回结果，则调用 `build_candidate_tree()`。
 4. 如果候选树为空，则尝试直接条带步或局部 fallback。
 5. 对候选分支取 `branch_score` 最大者。
@@ -357,14 +358,14 @@ move_cost
 
 README / `text/03.md` 中的文字流程更像“候选树筛选 + 评分 + 死区逃逸”的理想算法。但当前代码存在以下偏差：
 
-1. `use_global_strip_plan` 默认开启，且优先级高于滚动候选树。
+1. 全局条带计划仍保留在代码中，但默认关闭，只有显式启用时优先级才高于滚动候选树。
 2. `_allowed_next()` 未实际筛除立即回退、重复访问、斜向移动、过多转向等，只是通过评分惩罚。
 3. 候选树使用 beam search，不是完整枚举所有深度为 H 的路径。
-4. 条带优先规则 `_priority_strip_step()` 会在候选树之前返回直接步骤。
+4. 条带优先规则 `_priority_strip_step()` 默认关闭，显式启用时会在候选树之前返回直接步骤。
 5. Dijkstra 逃逸使用 8 邻域，并会为了补剩余未覆盖块产生长斜向路径。
 6. `record_candidate_count` 和 `record_tree_count` 默认极大，输出的 `decisions.csv` 可能非常重。
 
-这些偏差不一定都是错误，但如果论文方法希望强调 rolling GBNN 分支决策，就需要决定是否弱化或关闭全局条带计划。
+这些偏差不一定都是错误，但如果论文方法希望进一步强调 rolling GBNN 分支决策，后续重点应放在评分函数和合法性筛选，而不是全局条带计划。
 
 ## 15. 最近输出暴露的问题
 

@@ -50,7 +50,7 @@ class RollingGBNNStrategy:
         self._strip_plan_index = 0
 
     def choose_next(self, step: int, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> StepDecision:
-        if self.config.get("rolling_optimizer", {}).get("use_global_strip_plan", True):
+        if self.config.get("rolling_optimizer", {}).get("use_global_strip_plan", False):
             planned = self._next_strip_plan_step(usv, cell_map, gbnn_field)
             if planned is not None:
                 return planned

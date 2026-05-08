@@ -47,7 +47,7 @@ class RollingOptimizer:
                     details["candidate_tree"] = _serialize_tree([self._local_candidate_states(usv, cell_map, gbnn_field)], candidate_limit)
                     return n, branch, details
             return None, [], {"reason": "rolling_disabled_no_uncovered_neighbor"}
-        priority_step = self._priority_strip_step(usv, cell_map, gbnn_field) if self.config.get("use_priority_strip", True) else None
+        priority_step = self._priority_strip_step(usv, cell_map, gbnn_field) if self.config.get("use_priority_strip", False) else None
         if priority_step is not None:
             branch = [priority_step]
             details = self.score_branch(usv, cell_map, gbnn_field, branch)
@@ -203,7 +203,7 @@ class RollingOptimizer:
         root = branch[-1] if branch else usv.current_cell
         if not self.config.get("allow_diagonal_normal", False) and _is_diagonal_step(root, cell):
             return False
-        if not branch and self.current_strip_has_forward_uncovered(usv, cell_map):
+        if self.config.get("use_strip_constraints", False) and not branch and self.current_strip_has_forward_uncovered(usv, cell_map):
             current_strip = usv.current_strip_id if usv.current_strip_id is not None else usv.current_cell[1]
             if abs(cell[1] - current_strip) == 1:
                 direction = 1 if usv.strip_direction >= 0 else -1

@@ -287,7 +287,8 @@ def log_run_start(source: str, planner: CoveragePlanner, cfg: dict[str, Any], ou
     print(
         "[planner:config] "
         f"gbnn={gbnn.get('enabled', True)} rolling={rolling.get('enabled', True)} escape={escape.get('enabled', True)} "
-        f"global_strip={rolling.get('use_global_strip_plan', True)} priority_strip={rolling.get('use_priority_strip', True)} "
+        f"global_strip={rolling.get('use_global_strip_plan', False)} priority_strip={rolling.get('use_priority_strip', False)} "
+        f"strip_constraints={rolling.get('use_strip_constraints', False)} "
         f"diagonal_normal={rolling.get('allow_diagonal_normal', False)} "
         f"horizon={rolling.get('horizon')} beam={rolling.get('beam_width')} "
         f"candidates={rolling.get('record_candidate_count')} tree={rolling.get('record_tree_count')} "

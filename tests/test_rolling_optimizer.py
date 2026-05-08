@@ -134,6 +134,7 @@ def test_missed_branch_bonus_enters_side_strip_before_passing_it():
     opt = RollingOptimizer(
         {
             "horizon": 1,
+            "use_priority_strip": True,
             "w_new_coverage": 8.0,
             "w_activity": 0.0,
             "w_direction": 4.0,
