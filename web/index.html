@@ -364,6 +364,8 @@
       </fieldset>
       <fieldset>
         <legend>滚动候选树</legend>
+        <div class="inline"><input id="useGlobalStripInput" type="checkbox">启用全局条带</div>
+        <div class="inline"><input id="usePriorityStripInput" type="checkbox">启用条带优先</div>
         <label>预测步数
           <input id="horizonInput" type="number" min="1" max="12" value="3">
         </label>
@@ -453,6 +455,8 @@
       noGbnn: document.getElementById("noGbnnInput"),
       noRolling: document.getElementById("noRollingInput"),
       noEscape: document.getElementById("noEscapeInput"),
+      useGlobalStrip: document.getElementById("useGlobalStripInput"),
+      usePriorityStrip: document.getElementById("usePriorityStripInput"),
       horizon: document.getElementById("horizonInput"),
       beamWidth: document.getElementById("beamWidthInput"),
       candidateCount: document.getElementById("candidateCountInput"),
@@ -530,6 +534,8 @@
           no_gbnn: el.noGbnn.checked,
           no_rolling: el.noRolling.checked,
           no_escape: el.noEscape.checked,
+          use_global_strip_plan: el.useGlobalStrip.checked,
+          use_priority_strip: el.usePriorityStrip.checked,
           horizon: Number(el.horizon.value),
           beam_width: Number(el.beamWidth.value),
           record_candidate_count: Number(el.candidateCount.value),
@@ -626,6 +632,8 @@
       setInput(el.maxSteps, planner.max_steps);
       setInput(el.method, method.name);
       setInput(el.escapeMethod, escape.method || "hybrid");
+      el.useGlobalStrip.checked = rolling.use_global_strip_plan !== false;
+      el.usePriorityStrip.checked = rolling.use_priority_strip !== false;
       setInput(el.horizon, rolling.horizon);
       setInput(el.beamWidth, rolling.beam_width);
       setInput(el.candidateCount, rolling.record_candidate_count || 1000000);
@@ -869,7 +877,9 @@
       const frame = state.frames[state.index] || {type: "state", rowIndex: 0};
       const rows = state.data.pathRows;
       const row = rows[frame.rowIndex];
-      const decision = frame.type === "decision" ? state.data.decisions.get(frame.decisionStep) : null;
+      const decision = frame.type === "decision"
+        ? state.data.decisions.get(frame.decisionStep)
+        : state.data.decisions.get(Number(row.step));
       const metrics = getMetrics();
       if (state.activeTab === "activity") {
         drawActivityGrid(metrics);

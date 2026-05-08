@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 
 from src.core.cell_map import Cell, CellMap
@@ -14,16 +15,28 @@ class BranchState:
     details: dict[str, float]
 
 
+@dataclass(frozen=True)
+class LocalTopology:
+    terrain_type: str
+    component_size: int
+    entry_degree: int
+    return_cost: float
+    open_strip_score: float
+    pocket_score: float
+
+
 class RollingOptimizer:
     def __init__(self, config: dict | None = None):
         self.config = config or {}
         self._feature_cache: dict[Cell, dict] = {}
         self._branch_urgency_cache: dict[tuple[Cell, Cell], float] = {}
+        self._topology_cache: dict[tuple[Cell, Cell, int], LocalTopology] = {}
         self._last_candidate_tree: dict = {"levels": []}
 
     def select_next_cell(self, usv: USV, cell_map: CellMap, gbnn_field: GBNNField) -> tuple[Cell | None, list[Cell], dict]:
         self._feature_cache = {}
         self._branch_urgency_cache = {}
+        self._topology_cache = {}
         candidate_limit = int(self.config.get("record_candidate_count", 1_000_000))
         if self.config.get("enabled", True) is False:
             for n in cell_map.neighbors8(usv.current_cell):
@@ -94,7 +107,8 @@ class RollingOptimizer:
                 continue
             if abs(n[1] - current[1]) != 1:
                 continue
-            score = self._missed_branch_score(current, n, cell_map, direction)
+            topology = self._local_topology(current, n, cell_map, direction)
+            score = self._missed_branch_score(current, n, cell_map, direction, topology)
             if score > 0.0:
                 heading_bonus = 1.0 if n[0] == current[0] else 0.6 if (n[0] - current[0]) * direction > 0 else 0.0
                 candidates.append((score + heading_bonus, n))
@@ -204,7 +218,9 @@ class RollingOptimizer:
         strip_cross_penalty = 0.0
         strip_loop_penalty = 0.0
         immediate_backtrack_penalty = 0.0
+        topology_zigzag_penalty = 0.0
         missed_branch = 0.0
+        topology: LocalTopology | None = None
         prev = usv.current_cell
         prev_heading = usv.heading
         current_strip = usv.current_strip_id if usv.current_strip_id is not None else usv.current_cell[1]
@@ -216,7 +232,11 @@ class RollingOptimizer:
         structure_score = 0.0
         branch_urgency = 0.0
         for i, cell in enumerate(branch):
-            missed_branch_score = self._missed_branch_score(usv.current_cell, cell, cell_map, strip_direction) if i == 0 else 0.0
+            if i == 0:
+                topology = self._local_topology(usv.current_cell, cell, cell_map, strip_direction)
+                missed_branch_score = self._missed_branch_score(usv.current_cell, cell, cell_map, strip_direction, topology)
+            else:
+                missed_branch_score = 0.0
             if i == 0 and len(usv.path) >= 2 and cell == usv.path[-2]:
                 immediate_backtrack_penalty += 1.0
             elif i >= 2 and cell == branch[i - 2]:
@@ -240,6 +260,8 @@ class RollingOptimizer:
                         strip_transition += 1.0 + 0.6 * missed_branch_score
                     else:
                         strip_cross_penalty += 3.0
+                    if i == 0 and topology is not None and topology.terrain_type == "open_strip":
+                        topology_zigzag_penalty += topology.open_strip_score
                 else:
                     strip_transition += 1.0
                     if features["uncovered"]:
@@ -271,6 +293,8 @@ class RollingOptimizer:
             if i == 0:
                 branch_urgency += self._branch_urgency_score(usv.current_cell, cell, cell_map)
                 missed_branch += missed_branch_score
+                if topology is not None and topology.terrain_type == "pocket":
+                    branch_urgency += topology.pocket_score
             dead_zone += features["dead_zone"]
             obstacle += features["obstacle"]
             prev = cell
@@ -292,6 +316,7 @@ class RollingOptimizer:
         strip_cross_term = cfg.get("w_strip_cross", 35.0) * strip_cross_penalty
         strip_loop_term = cfg.get("w_strip_loop", 20.0) * strip_loop_penalty
         immediate_backtrack_term = cfg.get("w_immediate_backtrack", 1000.0) * immediate_backtrack_penalty
+        topology_zigzag_term = cfg.get("w_topology_zigzag", 30.0) * topology_zigzag_penalty
         score = (
             new_coverage_score
             + activity_score
@@ -310,6 +335,7 @@ class RollingOptimizer:
             - strip_cross_term
             - strip_loop_term
             - immediate_backtrack_term
+            - topology_zigzag_term
         )
         return {
             "branch_score": float(score),
@@ -329,6 +355,9 @@ class RollingOptimizer:
             "strip_cross_penalty": float(strip_cross_term),
             "strip_loop_penalty": float(strip_loop_term),
             "immediate_backtrack_penalty": float(immediate_backtrack_term),
+            "topology_zigzag_penalty": float(topology_zigzag_term),
+            "topology_component_size": float(topology.component_size if topology is not None else 0),
+            "topology_return_cost": float(topology.return_cost if topology is not None else 0.0),
         }
 
     def current_strip_has_forward_uncovered(self, usv: USV, cell_map: CellMap) -> bool:
@@ -465,7 +494,14 @@ class RollingOptimizer:
         self._branch_urgency_cache[key] = score
         return score
 
-    def _missed_branch_score(self, current: Cell, first_cell: Cell, cell_map: CellMap, strip_direction: int) -> float:
+    def _missed_branch_score(
+        self,
+        current: Cell,
+        first_cell: Cell,
+        cell_map: CellMap,
+        strip_direction: int,
+        topology: LocalTopology | None = None,
+    ) -> float:
         if not cell_map.is_uncovered(first_cell):
             return 0.0
         dx = first_cell[0] - current[0]
@@ -473,6 +509,9 @@ class RollingOptimizer:
         if abs(dy) != 1:
             return 0.0
         if dx * strip_direction < 0:
+            return 0.0
+        topology = topology or self._local_topology(current, first_cell, cell_map, strip_direction)
+        if topology.terrain_type == "open_strip":
             return 0.0
 
         y = first_cell[1]
@@ -491,7 +530,86 @@ class RollingOptimizer:
         geometry = max(current_obstacle_pressure, side_obstacle_pressure)
         run_score = min(behind_uncovered / float(self.config.get("missed_branch_full_behind", 18)), 1.0)
         geometry_score = min(geometry / 0.35, 1.0)
-        return run_score * max(0.45, geometry_score)
+        return_cost_score = min(topology.return_cost / float(self.config.get("topology_full_return_cost", 18.0)), 1.0)
+        pocket_bonus = 0.6 * topology.pocket_score if topology.terrain_type == "pocket" else 0.0
+        return run_score * max(0.25, geometry_score, return_cost_score) + pocket_bonus
+
+    def _local_topology(self, current: Cell, first_cell: Cell, cell_map: CellMap, strip_direction: int) -> LocalTopology:
+        key = (current, first_cell, strip_direction)
+        cached = self._topology_cache.get(key)
+        if cached is not None:
+            return cached
+        if not cell_map.is_uncovered(first_cell):
+            topology = LocalTopology("covered", 0, 0, 0.0, 0.0, 0.0)
+            self._topology_cache[key] = topology
+            return topology
+
+        component = self._uncovered_component(cell_map, first_cell, int(self.config.get("topology_component_limit", 256)))
+        component_size = len(component)
+        entry_degree = sum(1 for n in cell_map.neighbors8(first_cell) if cell_map.is_uncovered(n))
+        row_open_ahead = self._row_uncovered_run(cell_map, first_cell, strip_direction)
+        row_open_behind = self._row_uncovered_run(cell_map, first_cell, -strip_direction)
+        obstacle_pressure = self._obstacle_risk(cell_map, first_cell)
+        return_cost = self._return_cost_proxy(current, first_cell, cell_map, strip_direction)
+
+        open_min_component = int(self.config.get("topology_open_component_min", 18))
+        open_min_run = int(self.config.get("topology_open_run_min", 8))
+        pocket_component_max = int(self.config.get("topology_pocket_component_max", 10))
+        terrain_type = "junction"
+        open_strip_score = 0.0
+        pocket_score = 0.0
+
+        if component_size >= open_min_component and row_open_ahead >= open_min_run and entry_degree >= 4:
+            terrain_type = "open_strip"
+            open_strip_score = min(1.0, row_open_ahead / float(max(1, open_min_run * 2)))
+        elif component_size <= pocket_component_max or entry_degree <= 2 or obstacle_pressure >= 0.35:
+            terrain_type = "pocket"
+            compactness = 1.0 - min(component_size / float(max(1, pocket_component_max + 1)), 1.0)
+            narrowness = max(0.0, (3.0 - entry_degree) / 3.0)
+            return_pressure = min(return_cost / float(self.config.get("topology_full_return_cost", 18.0)), 1.0)
+            pocket_score = max(compactness, narrowness, obstacle_pressure, return_pressure)
+        elif row_open_ahead + row_open_behind >= open_min_run:
+            terrain_type = "open_strip"
+            open_strip_score = 0.6
+
+        topology = LocalTopology(terrain_type, component_size, entry_degree, return_cost, open_strip_score, pocket_score)
+        self._topology_cache[key] = topology
+        return topology
+
+    def _uncovered_component(self, cell_map: CellMap, start: Cell, limit: int) -> set[Cell]:
+        if not cell_map.is_uncovered(start):
+            return set()
+        seen = {start}
+        q: deque[Cell] = deque([start])
+        while q and len(seen) < limit:
+            cell = q.popleft()
+            for n in cell_map.neighbors8(cell):
+                if n not in seen and cell_map.is_uncovered(n):
+                    seen.add(n)
+                    q.append(n)
+                    if len(seen) >= limit:
+                        break
+        return seen
+
+    def _row_uncovered_run(self, cell_map: CellMap, start: Cell, direction: int) -> int:
+        x, y = start
+        run = 0
+        step = 1 if direction >= 0 else -1
+        while 0 <= x < cell_map.width and cell_map.is_traversable((x, y)):
+            if cell_map.is_uncovered((x, y)):
+                run += 1
+            x += step
+        return run
+
+    def _return_cost_proxy(self, current: Cell, first_cell: Cell, cell_map: CellMap, strip_direction: int) -> float:
+        direction = 1 if strip_direction >= 0 else -1
+        x = current[0]
+        distance_to_barrier = 0
+        while 0 <= x < cell_map.width and cell_map.is_traversable((x, current[1])):
+            distance_to_barrier += 1
+            x += direction
+        side_run = self._row_uncovered_run(cell_map, first_cell, direction)
+        return float(min(distance_to_barrier, 24) + min(side_run, 24)) / 2.0
 
 def _heading_between(a: Cell, b: Cell) -> int | None:
     dx = 0 if b[0] == a[0] else (1 if b[0] > a[0] else -1)

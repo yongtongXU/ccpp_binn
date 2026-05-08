@@ -289,6 +289,10 @@ def apply_web_overrides(cfg: dict[str, Any], payload: dict[str, Any]) -> None:
         cfg.setdefault("method", {})["name"] = str(payload["method"])
     cfg.setdefault("gbnn", {})["enabled"] = not bool(payload.get("no_gbnn", False))
     cfg.setdefault("rolling_optimizer", {})["enabled"] = not bool(payload.get("no_rolling", False))
+    if "use_global_strip_plan" in payload:
+        cfg.setdefault("rolling_optimizer", {})["use_global_strip_plan"] = bool(payload["use_global_strip_plan"])
+    if "use_priority_strip" in payload:
+        cfg.setdefault("rolling_optimizer", {})["use_priority_strip"] = bool(payload["use_priority_strip"])
     cfg.setdefault("escape", {})["enabled"] = not bool(payload.get("no_escape", False))
     if payload.get("escape_method"):
         cfg.setdefault("escape", {})["method"] = str(payload["escape_method"])
@@ -414,6 +418,11 @@ def parse_candidates(value: Any) -> list[dict[str, Any]]:
         return value
     if not value:
         return []
+    try:
+        parsed = json.loads(str(value))
+        return parsed if isinstance(parsed, list) else []
+    except json.JSONDecodeError:
+        return []
 
 
 def parse_tree(value: Any) -> dict[str, Any]:
@@ -426,11 +435,6 @@ def parse_tree(value: Any) -> dict[str, Any]:
         return parsed if isinstance(parsed, dict) else {"levels": []}
     except json.JSONDecodeError:
         return {"levels": []}
-    try:
-        parsed = json.loads(str(value))
-        return parsed if isinstance(parsed, list) else []
-    except json.JSONDecodeError:
-        return []
 
 
 def parse_branch(value: str) -> list[list[int]]:

@@ -19,8 +19,25 @@ SCENARIOS = [
 
 def run_scenario(path: str, args: argparse.Namespace) -> dict:
     config = apply_cli_overrides(load_config(path), args)
+    if args.output:
+        config.setdefault("output", {})["root"] = args.output
     planner = CoveragePlanner(config)
-    return planner.run(config.get("output", {}).get("root", "outputs"))
+    output_root = config.get("output", {}).get("root", "outputs")
+    print(
+        f"[start] scenario={planner.scenario} method={planner.strategy.name} "
+        f"map={planner.cell_map.width}x{planner.cell_map.height} output={output_root}",
+        flush=True,
+    )
+    metrics = planner.run(output_root)
+    print(
+        f"[done] scenario={planner.scenario} success={metrics['success']} "
+        f"coverage={metrics['coverage_rate']:.4f} steps={metrics['total_steps']} "
+        f"turns={metrics['number_of_turns']} escapes={metrics['escape_steps']} "
+        f"failure={metrics['failure_reason'] or 'none'}",
+        flush=True,
+    )
+    print(f"[output] {Path(output_root) / planner.scenario}", flush=True)
+    return metrics
 
 
 def main() -> None:
@@ -39,6 +56,7 @@ def main() -> None:
         parser.error("Use --scenario <yaml> or --all")
 
     scenario_paths = SCENARIOS if args.all else [args.scenario]
+    print(f"[run] planning {len(scenario_paths)} scenario(s)", flush=True)
     rows = [run_scenario(path, args) for path in scenario_paths]
     output_root = args.output or "outputs"
     Path(output_root).mkdir(parents=True, exist_ok=True)
@@ -47,6 +65,7 @@ def main() -> None:
         if col not in df.columns:
             df[col] = None
     df[SUMMARY_COLUMNS].to_csv(Path(output_root) / "summary.csv", index=False)
+    print(f"[summary] {Path(output_root) / 'summary.csv'}", flush=True)
     print(df[SUMMARY_COLUMNS].to_string(index=False))
 
 
