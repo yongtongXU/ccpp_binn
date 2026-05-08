@@ -35,6 +35,20 @@ class PlanningState:
     current_dead_zone: float
 
 
+PLANNING_MODE_LABELS = {
+    "auto": "自动识别",
+    "open_water": "开阔水域",
+    "junction_search": "岔路查找",
+    "corridor": "狭窄通道",
+    "boundary_contact": "触及边界",
+    "obstacle_edge": "障碍边缘",
+    "pocket_entry": "口袋入口",
+    "dead_zone": "死区陷入",
+    "frontier_recovery": "前沿恢复",
+    "frontier_following": "前沿跟随",
+}
+
+
 class RollingOptimizer:
     def __init__(self, config: dict | None = None):
         self.config = config or {}
@@ -378,6 +392,7 @@ class RollingOptimizer:
         return {
             "branch_score": float(score),
             "planning_mode": planning_state.mode,
+            "planning_mode_label": PLANNING_MODE_LABELS.get(planning_state.mode, planning_state.mode),
             "planning_mode_reason": planning_state.reason,
             "mode_uncovered_neighbors": float(planning_state.uncovered_neighbors),
             "mode_traversable_neighbors": float(planning_state.traversable_neighbors),
@@ -422,6 +437,7 @@ class RollingOptimizer:
             )
 
         current = usv.current_cell
+        touches_boundary = current[0] == 0 or current[1] == 0 or current[0] == cell_map.width - 1 or current[1] == cell_map.height - 1
         traversable_neighbors = cell_map.neighbors8(current)
         movement_neighbors = self._movement_neighbors(cell_map, current)
         uncovered_neighbors = [n for n in movement_neighbors if cell_map.is_uncovered(n)]
@@ -434,6 +450,8 @@ class RollingOptimizer:
             mode, reason = "dead_zone", "no_uncovered_neighbor"
         elif len(uncovered_neighbors) == 0:
             mode, reason = "frontier_recovery", "covered_local_frontier"
+        elif touches_boundary:
+            mode, reason = "boundary_contact", "current_cell_touches_map_boundary"
         elif len(local_uncovered_neighbors) >= int(self.config.get("mode_open_min_local_uncovered", 6)) and obstacle_pressure <= float(
             self.config.get("mode_open_max_obstacle_pressure", 0.15)
         ):
@@ -837,6 +855,7 @@ def _serialize_candidates(candidates: list[BranchState], limit: int) -> list[dic
             "type": "rolling",
             "score": float(candidate.score),
             "planning_mode": candidate.details.get("planning_mode"),
+            "planning_mode_label": candidate.details.get("planning_mode_label"),
             "path": [[int(x), int(y)] for x, y in candidate.branch],
         }
         for candidate in ordered

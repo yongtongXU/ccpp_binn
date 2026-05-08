@@ -190,6 +190,7 @@ class CoveragePlanner:
                 "escape_type",
                 "method",
                 "planning_mode",
+                "planning_mode_label",
                 "planning_mode_reason",
                 "mode_uncovered_neighbors",
                 "mode_traversable_neighbors",
@@ -277,6 +278,7 @@ class CoveragePlanner:
                 for k in [
                     "branch_score",
                     "planning_mode",
+                    "planning_mode_label",
                     "planning_mode_reason",
                     "mode_uncovered_neighbors",
                     "mode_traversable_neighbors",

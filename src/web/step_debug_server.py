@@ -16,6 +16,7 @@ import numpy as np
 from src.core.cell_map import OBSTACLE, Cell
 from src.core.coverage_planner import CoveragePlanner
 from src.core.metrics import compute_metrics
+from src.core.rolling_optimizer import PLANNING_MODE_LABELS
 from src.core.strategy import RollingGBNNStrategy, StepDecision
 from src.utils.config import load_config
 
@@ -29,6 +30,7 @@ PLANNING_MODES = [
     "open_water",
     "junction_search",
     "corridor",
+    "boundary_contact",
     "obstacle_edge",
     "pocket_entry",
     "dead_zone",
@@ -103,10 +105,12 @@ class StepDebugSession:
         if self.planner.cell_map.coverage_rate() >= 1.0:
             return self.state("finished")
         self._push_history()
+        pre_step_state = self._classify_now()
         self._apply_debug_overrides(payload)
         self.step_index += 1
         self.planner.gbnn.update(self.planner.cell_map)
         decision = self.planner.strategy.choose_next(self.step_index, self.planner.usv, self.planner.cell_map, self.planner.gbnn)
+        self._clear_forced_mode()
         suggested = decision.next_cell
         manual_cell = self._manual_cell(payload)
         if manual_cell is not None:
@@ -128,6 +132,9 @@ class StepDebugSession:
         self.planner.cell_map.mark_covered(decision.next_cell)
         decision.details["planner_suggested"] = [int(suggested[0]), int(suggested[1])] if suggested else None
         self.planner._record_decision(self.step_index, decision, decision.next_cell)
+        self.planner.decision_rows[-1]["pre_step_mode"] = pre_step_state.get("mode")
+        self.planner.decision_rows[-1]["pre_step_mode_label"] = pre_step_state.get("mode_label")
+        self.planner.decision_rows[-1]["pre_step_mode_reason"] = pre_step_state.get("reason")
         self.planner.coverage_history.append(self.planner.cell_map.coverage_rate())
         self.planner.strategy.after_step(self.planner.cell_map.coverage_rate())
         self.planner._record_path_row(self.step_index, self.planner.usv.mode_history[-1], self.planner.usv.escape_type_history[-1])
@@ -158,7 +165,9 @@ class StepDebugSession:
             "step": self.step_index,
             "cell": [int(self.planner.usv.current_cell[0]), int(self.planner.usv.current_cell[1])],
             "algorithm_mode": current_state.get("mode"),
+            "algorithm_mode_label": current_state.get("mode_label"),
             "corrected_mode": mode,
+            "corrected_mode_label": mode_label(mode),
             "note": str(payload.get("note") or ""),
         }
         self.annotations.append(annotation)
@@ -181,6 +190,11 @@ class StepDebugSession:
         rolling_cfg["debug_forced_planning_mode"] = "" if forced_mode == "auto" else forced_mode
         if isinstance(self.planner.strategy, RollingGBNNStrategy):
             self.planner.strategy.rolling.config["debug_forced_planning_mode"] = rolling_cfg["debug_forced_planning_mode"]
+
+    def _clear_forced_mode(self) -> None:
+        self._rolling_config()["debug_forced_planning_mode"] = ""
+        if isinstance(self.planner.strategy, RollingGBNNStrategy):
+            self.planner.strategy.rolling.config["debug_forced_planning_mode"] = ""
 
     def _manual_cell(self, payload: dict[str, Any]) -> Cell | None:
         raw = payload.get("manual_next")
@@ -218,7 +232,7 @@ class StepDebugSession:
         self.custom_modes.append(mode)
 
     def _planning_modes(self) -> list[str]:
-        return [*PLANNING_MODES, *self.custom_modes]
+        return [mode_option(mode) for mode in [*PLANNING_MODES, *self.custom_modes]]
 
     def _push_history(self) -> None:
         self.history.append(
@@ -241,7 +255,11 @@ class StepDebugSession:
             "coverage_rate": self.planner.cell_map.coverage_rate(),
             "repeated_coverage_rate": self.planner.cell_map.repeated_coverage_rate(),
             "mode": current_state.get("mode"),
+            "mode_label": current_state.get("mode_label"),
             "mode_reason": current_state.get("reason"),
+            "pre_step_mode": last_decision.get("pre_step_mode"),
+            "pre_step_mode_label": last_decision.get("pre_step_mode_label"),
+            "pre_step_mode_reason": last_decision.get("pre_step_mode_reason"),
             "selected": [int(decision.next_cell[0]), int(decision.next_cell[1])] if decision.next_cell else None,
             "manual_override": bool(decision.details.get("manual_override")),
             "planner_suggested": decision.details.get("planner_suggested"),
@@ -286,7 +304,11 @@ class StepDebugSession:
             "coverage_rate",
             "repeated_coverage_rate",
             "mode",
+            "mode_label",
             "mode_reason",
+            "pre_step_mode",
+            "pre_step_mode_label",
+            "pre_step_mode_reason",
             "manual_override",
             "planner_suggested",
             "selected",
@@ -304,7 +326,11 @@ class StepDebugSession:
                         "coverage_rate": row.get("coverage_rate"),
                         "repeated_coverage_rate": row.get("repeated_coverage_rate"),
                         "mode": row.get("mode"),
+                        "mode_label": row.get("mode_label"),
                         "mode_reason": row.get("mode_reason"),
+                        "pre_step_mode": row.get("pre_step_mode"),
+                        "pre_step_mode_label": row.get("pre_step_mode_label"),
+                        "pre_step_mode_reason": row.get("pre_step_mode_reason"),
                         "manual_override": row.get("manual_override"),
                         "planner_suggested": json.dumps(row.get("planner_suggested"), ensure_ascii=False),
                         "selected": json.dumps(row.get("selected"), ensure_ascii=False),
@@ -312,7 +338,7 @@ class StepDebugSession:
                 )
 
     def _write_annotations_csv(self, path: Path) -> None:
-        columns = ["step", "x", "y", "algorithm_mode", "corrected_mode", "note"]
+        columns = ["step", "x", "y", "algorithm_mode", "algorithm_mode_label", "corrected_mode", "corrected_mode_label", "note"]
         with path.open("w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=columns)
             writer.writeheader()
@@ -324,7 +350,9 @@ class StepDebugSession:
                         "x": cell[0],
                         "y": cell[1],
                         "algorithm_mode": row.get("algorithm_mode"),
+                        "algorithm_mode_label": row.get("algorithm_mode_label"),
                         "corrected_mode": row.get("corrected_mode"),
+                        "corrected_mode_label": row.get("corrected_mode_label"),
                         "note": row.get("note"),
                     }
                 )
@@ -332,9 +360,16 @@ class StepDebugSession:
     def _classify_now(self) -> dict[str, Any]:
         if not isinstance(self.planner.strategy, RollingGBNNStrategy):
             return {}
-        state = self.planner.strategy.rolling.classify_planning_state(self.planner.usv, self.planner.cell_map)
+        rolling = self.planner.strategy.rolling
+        old_forced = rolling.config.get("debug_forced_planning_mode", "")
+        rolling.config["debug_forced_planning_mode"] = ""
+        try:
+            state = rolling.classify_planning_state(self.planner.usv, self.planner.cell_map)
+        finally:
+            rolling.config["debug_forced_planning_mode"] = old_forced
         return {
             "mode": state.mode,
+            "mode_label": mode_label(state.mode),
             "reason": state.reason,
             "traversable_neighbors": state.traversable_neighbors,
             "uncovered_neighbors": state.uncovered_neighbors,
@@ -457,6 +492,14 @@ def to_jsonable(value: Any) -> Any:
     if isinstance(value, np.ndarray):
         return value.tolist()
     return value
+
+
+def mode_label(mode: str) -> str:
+    return PLANNING_MODE_LABELS.get(mode, mode)
+
+
+def mode_option(mode: str) -> dict[str, str]:
+    return {"value": mode, "label": mode_label(mode)}
 
 
 SESSION = StepDebugSession()

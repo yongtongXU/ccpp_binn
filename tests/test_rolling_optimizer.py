@@ -85,6 +85,14 @@ def test_planning_state_detects_dead_zone():
     assert state.reason == "no_uncovered_neighbor"
 
 
+def test_planning_state_detects_boundary_contact():
+    cm = CellMap(5, 5)
+    usv = USV((0, 2))
+    cm.mark_covered((0, 2))
+    state = RollingOptimizer({}).classify_planning_state(usv, cm)
+    assert state.mode == "boundary_contact"
+
+
 def test_avoids_obstacle_and_next_is_neighbor():
     cm = CellMap(5, 5)
     cm.grid[2, 3] = OBSTACLE

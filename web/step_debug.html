@@ -321,18 +321,26 @@
       const previousForced = el.forcedMode.value || "auto";
       const previousCorrected = el.correctedMode.value || (state.data?.planning_state?.mode || "frontier_following");
       fillSelect(el.forcedMode, modes, previousForced);
-      fillSelect(el.correctedMode, modes.filter((m) => m !== "auto"), previousCorrected);
+      fillSelect(el.correctedMode, modes.filter((m) => optionValue(m) !== "auto"), previousCorrected);
     }
 
     function fillSelect(select, values, previous) {
       select.innerHTML = "";
       for (const mode of values) {
         const option = document.createElement("option");
-        option.value = mode;
-        option.textContent = mode;
+        option.value = optionValue(mode);
+        option.textContent = optionLabel(mode);
         select.appendChild(option);
       }
-      if (values.includes(previous)) select.value = previous;
+      if (values.some((mode) => optionValue(mode) === previous)) select.value = previous;
+    }
+
+    function optionValue(mode) {
+      return typeof mode === "string" ? mode : mode.value;
+    }
+
+    function optionLabel(mode) {
+      return typeof mode === "string" ? mode : mode.label;
     }
 
     function renderMetrics() {
@@ -340,7 +348,7 @@
       const metrics = [
         ["step", data.step],
         ["current", `(${data.current[0]}, ${data.current[1]})`],
-        ["mode", data.planning_state.mode],
+        ["mode", data.planning_state.mode_label || data.planning_state.mode],
         ["coverage", percent(data.coverage_rate)],
         ["repeat", percent(data.repeated_coverage_rate)],
         ["turns", data.metrics.number_of_turns],
@@ -350,7 +358,16 @@
     }
 
     function renderPlanningState() {
-      el.planningState.textContent = JSON.stringify(state.data.planning_state, null, 2);
+      const s = state.data.planning_state;
+      el.planningState.textContent = [
+        `模式：${s.mode_label || s.mode}`,
+        `内部key：${s.mode}`,
+        `原因：${s.reason}`,
+        `可通行邻居：${s.traversable_neighbors}`,
+        `未覆盖邻居：${s.uncovered_neighbors}`,
+        `障碍/边界压力：${Number(s.obstacle_pressure || 0).toFixed(3)}`,
+        `是否死区：${s.current_dead_zone}`,
+      ].join("\\n");
     }
 
     function renderNeighbors() {
@@ -368,7 +385,7 @@
       const candidates = Array.isArray(decision.candidate_branches) ? decision.candidate_branches.slice(0, 20) : [];
       el.candidates.innerHTML = candidates.map((c, idx) => {
         const path = (c.path || []).map((p) => `(${p[0]},${p[1]})`).join(" ");
-        return `<div class="item" data-path="${path}">#${idx + 1} score=${fmt(c.score)} mode=${c.planning_mode || ""}<br>${path}</div>`;
+        return `<div class="item" data-path="${path}">#${idx + 1} score=${fmt(c.score)} mode=${c.planning_mode_label || modeText(c.planning_mode)}<br>${path}</div>`;
       }).join("") || "<div class='hint'>尚无候选分支，先执行一步。</div>";
     }
 
@@ -487,6 +504,10 @@
 
     function percent(v) { return `${(Number(v || 0) * 100).toFixed(1)}%`; }
     function fmt(v) { return Number(v || 0).toFixed(2); }
+    function modeText(mode) {
+      const found = (state.data?.planning_modes || []).find((m) => optionValue(m) === mode);
+      return found ? optionLabel(found) : (mode || "");
+    }
 
     el.stepBtn.addEventListener("click", async () => {
       try {

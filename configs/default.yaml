@@ -96,6 +96,12 @@ rolling_optimizer:
       obstacle_penalty: 1.25
       dead_zone_penalty: 1.2
       branch_urgency: 1.2
+    boundary_contact:
+      direction: 1.1
+      obstacle_penalty: 1.25
+      dead_zone_penalty: 1.25
+      repeat_penalty: 1.15
+      structure: 1.1
     obstacle_edge:
       structure: 1.15
       branch_urgency: 1.25
