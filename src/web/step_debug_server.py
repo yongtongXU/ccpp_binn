@@ -311,16 +311,8 @@ class StepDebugSession:
             "annotations_csv": str(base / "mode_annotations.csv"),
         }
 
-    def _save_debug_log(self) -> None:
-        paths = self._save_paths()
-        base = Path(paths["json"]).parent
-        base.mkdir(parents=True, exist_ok=True)
-        Path(paths["json"]).write_text(json.dumps(to_jsonable(self.step_log), ensure_ascii=False, indent=2), encoding="utf-8")
-        self._write_step_csv(Path(paths["csv"]))
-        self._write_annotations_csv(Path(paths["annotations_csv"]))
-
-    def _write_step_csv(self, path: Path) -> None:
-        columns = [
+    def _step_columns(self) -> list[str]:
+        return [
             "step",
             "x",
             "y",
@@ -337,6 +329,38 @@ class StepDebugSession:
             "coverage_rate",
             "repeated_coverage_rate",
         ]
+
+    def load_log_records(self) -> dict[str, Any]:
+        path = Path(self._save_paths()["json"])
+        if not path.exists():
+            self._save_debug_log()
+        records = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+        if not isinstance(records, list):
+            raise ValueError("step_debug_log.json must contain a JSON array")
+        return {
+            "records": records,
+            "columns": self._step_columns(),
+            "save_paths": self._save_paths(),
+            "planning_modes": self._planning_modes(),
+        }
+
+    def save_log_records(self, records: list[dict[str, Any]]) -> dict[str, Any]:
+        if not isinstance(records, list):
+            raise ValueError("records must be a list")
+        self.step_log = [{key: row.get(key, "") for key in self._step_columns()} for row in records]
+        self._save_debug_log()
+        return self.load_log_records()
+
+    def _save_debug_log(self) -> None:
+        paths = self._save_paths()
+        base = Path(paths["json"]).parent
+        base.mkdir(parents=True, exist_ok=True)
+        Path(paths["json"]).write_text(json.dumps(to_jsonable(self.step_log), ensure_ascii=False, indent=2), encoding="utf-8")
+        self._write_step_csv(Path(paths["csv"]))
+        self._write_annotations_csv(Path(paths["annotations_csv"]))
+
+    def _write_step_csv(self, path: Path) -> None:
+        columns = self._step_columns()
         with path.open("w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=columns)
             writer.writeheader()
@@ -420,8 +444,14 @@ class StepDebugHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/":
             self._send_file(WEB_ROOT / "step_debug.html")
             return
+        if parsed.path == "/log-editor":
+            self._send_file(WEB_ROOT / "step_log_editor.html")
+            return
         if parsed.path == "/api/state":
             self._send_json(SESSION.state())
+            return
+        if parsed.path == "/api/log-records":
+            self._send_json(SESSION.load_log_records())
             return
         self._send_safe_file(WEB_ROOT / unquote(parsed.path.lstrip("/")), WEB_ROOT)
 
@@ -439,6 +469,8 @@ class StepDebugHandler(SimpleHTTPRequestHandler):
                 result = SESSION.annotate_mode(payload)
             elif parsed.path == "/api/save":
                 result = SESSION.save()
+            elif parsed.path == "/api/log-records":
+                result = SESSION.save_log_records(payload.get("records", []))
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return

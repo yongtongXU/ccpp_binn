@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>模式场景日志编辑器</title>
+  <style>
+    :root {
+      font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #17202a;
+      background: #eef2f5;
+      --panel: #fff;
+      --line: #d4dce6;
+      --muted: #66758a;
+      --blue: #1769aa;
+      --edit: #fff7d6;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; }
+    .app {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 10px;
+      height: 100vh;
+      padding: 12px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      min-width: 0;
+    }
+    .top {
+      display: grid;
+      grid-template-columns: 1fr auto auto auto;
+      gap: 10px;
+      align-items: end;
+    }
+    h1 { font-size: 18px; margin: 0 0 6px; }
+    .hint, .status { color: var(--muted); font-size: 13px; line-height: 1.45; }
+    input, button {
+      height: 34px;
+      border: 1px solid #c9d2dc;
+      border-radius: 6px;
+      background: #fff;
+      color: #18212f;
+      padding: 0 9px;
+      font-size: 13px;
+    }
+    button {
+      cursor: pointer;
+      background: #f8fafc;
+    }
+    button.primary {
+      background: var(--blue);
+      border-color: var(--blue);
+      color: #fff;
+      font-weight: 600;
+    }
+    .table-wrap {
+      overflow: auto;
+      padding: 0;
+    }
+    table {
+      border-collapse: separate;
+      border-spacing: 0;
+      width: max-content;
+      min-width: 100%;
+      font-size: 12px;
+    }
+    th, td {
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      padding: 6px 8px;
+      min-width: 92px;
+      max-width: 220px;
+      white-space: nowrap;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #f3f6f9;
+      color: #415166;
+      text-align: left;
+    }
+    td {
+      background: #fff;
+      outline: none;
+    }
+    td:focus {
+      background: var(--edit);
+      box-shadow: inset 0 0 0 2px #e7b900;
+    }
+    td.changed {
+      background: #eaf7ee;
+    }
+    .row-actions {
+      position: sticky;
+      left: 0;
+      z-index: 1;
+      background: #fbfcfe;
+      min-width: 74px;
+    }
+    th.row-actions {
+      z-index: 3;
+      background: #eef3f8;
+    }
+    .delete {
+      height: 24px;
+      padding: 0 7px;
+      font-size: 12px;
+      color: #9d1c1c;
+    }
+    @media (max-width: 800px) {
+      .top { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="panel top">
+      <div>
+        <h1>模式场景日志编辑器</h1>
+        <div class="hint">数据源：`step_debug_log.json`；同步输出 JSON 和 CSV。</div>
+        <div class="status" id="status"></div>
+      </div>
+      <input id="filter" placeholder="筛选任意字段">
+      <button id="addRow">新增一行</button>
+      <button class="primary" id="reload">重新读取</button>
+    </section>
+    <section class="panel table-wrap">
+      <table id="table"></table>
+    </section>
+  </div>
+
+  <script>
+    const el = {
+      table: document.getElementById("table"),
+      status: document.getElementById("status"),
+      filter: document.getElementById("filter"),
+      addRow: document.getElementById("addRow"),
+      reload: document.getElementById("reload"),
+    };
+    const state = { records: [], columns: [], saveTimer: null, filter: "" };
+
+    async function api(path, body) {
+      const options = body ? {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      } : {};
+      const res = await fetch(path, options);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      return data;
+    }
+
+    async function load() {
+      const data = await api("/api/log-records");
+      state.records = data.records || [];
+      state.columns = data.columns || [];
+      render();
+      status(`已读取 ${state.records.length} 行；JSON: ${data.save_paths.json}`);
+    }
+
+    function render() {
+      const rows = filteredRows();
+      const head = `<thead><tr><th class="row-actions">操作</th>${state.columns.map((c) => `<th>${escapeHtml(c)}</th>`).join("")}</tr></thead>`;
+      const body = rows.map(({ row, index }) => {
+        const cells = state.columns.map((col) => {
+          const value = row[col] ?? "";
+          return `<td contenteditable="true" data-index="${index}" data-col="${escapeHtml(col)}">${escapeHtml(String(value))}</td>`;
+        }).join("");
+        return `<tr><td class="row-actions"><button class="delete" data-index="${index}">删除</button></td>${cells}</tr>`;
+      }).join("");
+      el.table.innerHTML = `${head}<tbody>${body}</tbody>`;
+      bindCells();
+    }
+
+    function filteredRows() {
+      const q = state.filter.trim().toLowerCase();
+      return state.records
+        .map((row, index) => ({ row, index }))
+        .filter(({ row }) => !q || JSON.stringify(row).toLowerCase().includes(q));
+    }
+
+    function bindCells() {
+      for (const td of el.table.querySelectorAll("td[contenteditable='true']")) {
+        td.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            td.blur();
+          }
+        });
+        td.addEventListener("blur", () => {
+          const index = Number(td.dataset.index);
+          const col = td.dataset.col;
+          const next = coerceValue(col, td.textContent.trim());
+          if (state.records[index][col] !== next) {
+            state.records[index][col] = next;
+            td.classList.add("changed");
+            scheduleSave();
+          }
+        });
+      }
+      for (const button of el.table.querySelectorAll(".delete")) {
+        button.addEventListener("click", () => {
+          const index = Number(button.dataset.index);
+          state.records.splice(index, 1);
+          render();
+          scheduleSave();
+        });
+      }
+    }
+
+    function coerceValue(col, value) {
+      if (["step", "x", "y", "next_pos_x", "next_pos_y", "user_next_pos_x", "user_next_pos_y"].includes(col)) {
+        return value === "" ? "" : Number.parseInt(value, 10);
+      }
+      if (["coverage_rate", "repeated_coverage_rate"].includes(col)) {
+        return value === "" ? "" : Number.parseFloat(value);
+      }
+      return value;
+    }
+
+    function scheduleSave() {
+      window.clearTimeout(state.saveTimer);
+      status("有修改，准备自动保存...");
+      state.saveTimer = window.setTimeout(save, 350);
+    }
+
+    async function save() {
+      const data = await api("/api/log-records", { records: state.records });
+      state.records = data.records || [];
+      status(`已自动保存 ${state.records.length} 行；CSV: ${data.save_paths.csv}`);
+    }
+
+    function emptyRow() {
+      const row = {};
+      for (const col of state.columns) row[col] = "";
+      row.step = state.records.length ? Number(state.records[state.records.length - 1].step || 0) + 1 : 0;
+      row.mode = "normal";
+      row.escape_type = "none";
+      return row;
+    }
+
+    function status(text) {
+      el.status.textContent = text;
+    }
+
+    function escapeHtml(value) {
+      return value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+    }
+
+    el.filter.addEventListener("input", () => {
+      state.filter = el.filter.value;
+      render();
+    });
+    el.addRow.addEventListener("click", () => {
+      state.records.push(emptyRow());
+      render();
+      scheduleSave();
+    });
+    el.reload.addEventListener("click", () => load().catch((err) => status(err.message)));
+    load().catch((err) => status(err.message));
+  </script>
+</body>
+</html>
