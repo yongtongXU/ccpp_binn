@@ -1,0 +1,30 @@
+scenario:
+  name: four_obstacles_15x15
+map:
+  width: 15
+  height: 15
+  cell_size: 1.0
+  obstacles:
+    - type: rectangle
+      x: 3
+      y: 3
+      width: 2
+      height: 2
+    - type: rectangle
+      x: 10
+      y: 3
+      width: 2
+      height: 3
+    - type: rectangle
+      x: 4
+      y: 10
+      width: 3
+      height: 2
+    - type: rectangle
+      x: 11
+      y: 10
+      width: 2
+      height: 2
+start:
+  x: 0
+  y: 0
