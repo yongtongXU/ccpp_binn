@@ -512,10 +512,13 @@
         const payload = {
           forced_mode: el.forcedMode.value,
           custom_forced_mode: el.customForcedMode.value.trim(),
+          corrected_mode: el.correctedMode.value,
+          custom_mode: el.customCorrectedMode.value.trim(),
           manual_next: el.manualNext.value.trim(),
         };
         el.manualNext.value = "";
         el.customForcedMode.value = "";
+        el.customCorrectedMode.value = "";
         setData(await api("/api/step", payload));
       } catch (err) {
         el.status.textContent = err.message;

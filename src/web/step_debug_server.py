@@ -243,6 +243,10 @@ class StepDebugSession:
         return str(payload.get(select_key) or "").strip()
 
     def _user_mode(self, payload: dict[str, Any], planning_state: dict[str, Any]) -> str:
+        mode = self._mode_from_payload(payload, "corrected_mode", "custom_mode")
+        if mode:
+            self._remember_mode(mode)
+            return mode
         mode = self._mode_from_payload(payload, "forced_mode", "custom_forced_mode")
         if not mode or mode == "auto":
             return str(planning_state.get("mode") or "")
